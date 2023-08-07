@@ -1,23 +1,39 @@
-[tool.poetry]
+[project]
 name = "nonebot-plugin-orm"
 version = "0.1.0"
 description = "SQLAlchemy ORM support for nonebot"
-authors = ["yanyongyu <yyy@nonebot.dev>"]
-license = "MIT"
+authors = [
+    { name = "yanyongyu", email = "yyy@nonebot.dev" },
+    { name = "ProgramRipper", email = "programripper@foxmail.com" },
+]
+dependencies = [
+    "alembic~=1.11",
+    "nonebot2~=2.0",
+    "sqlalchemy~=2.0",
+    "typing-extensions~=4.7; python_version < '3.9'",
+]
+requires-python = ">=3.8"
 readme = "README.md"
+license = { text = "MIT" }
+keywords = ["nonebot", "orm", "sqlalchemy"]
+[project.urls]
 homepage = "https://github.com/nonebot/plugin-orm"
 repository = "https://github.com/nonebot/plugin-orm"
 documentation = "https://github.com/nonebot/plugin-orm"
-keywords = ["nonebot", "orm", "sqlalchemy"]
 
-[tool.poetry.dependencies]
-python = "^3.8"
+[build-system]
+requires = ["pdm-backend"]
+build-backend = "pdm.backend"
 
-[tool.poetry.group.dev.dependencies]
-isort = "^5.10.1"
-black = "^23.1.0"
-nonemoji = "^0.1.2"
-pre-commit = "^3.1.0"
+[tool.pdm]
+[tool.pdm.dev-dependencies]
+dev = [
+    "black~=23.7",
+    "isort~=5.12",
+    "nonemoji~=0.1",
+    "pre-commit~=3.3",
+    "pycln~=2.2",
+]
 
 [tool.black]
 line-length = 88
@@ -36,6 +52,5 @@ extra_standard_library = ["typing_extensions"]
 [tool.pycln]
 path = "."
 
-[build-system]
-requires = ["poetry_core>=1.0.0"]
-build-backend = "poetry.core.masonry.api"
+[tool.pyright]
+pythonVersion = "3.8"
