@@ -1,4 +1,16 @@
 import sys
+from typing import TypeVar
+
+_T = TypeVar("_T")
+
+
+class _ReturnEq:
+    def __eq__(self, __o: _T) -> _T:
+        return __o
+
+
+_return_eq = _ReturnEq()
+
 
 if sys.version_info >= (3, 10):
     from inspect import get_annotations as get_annotations  # nopycln: import

@@ -1,5 +1,5 @@
 import sys
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from inspect import Parameter, Signature
 
 from nonebot.params import Depends
@@ -27,7 +27,7 @@ class Model(DeclarativeBase):
     def __init_subclass__(cls) -> None:
         parameters: list[Parameter] = []
 
-        annotations = {}
+        annotations: dict[str, Any] = {}
         for base in reversed(cls.__mro__):
             annotations.update(get_annotations(base, eval_str=True))
 

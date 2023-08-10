@@ -24,32 +24,34 @@ __plugin_meta__ = PluginMetadata(
 _AS = TypeVar("_AS", bound=AsyncSession)
 
 _driver = get_driver()
-_engine: AsyncEngine
-_sessionmaker: async_sessionmaker[AsyncSession]
 
 global_config = _driver.config
 config = Config.parse_obj(global_config)
 
+_engine = create_async_engine(
+    config.sqlalchemy_database_url,
+    **{
+        **config.sqlalchemy_engine_options,
+        "echo": config.sqlalchemy_echo,
+        "echo_pool": config.sqlalchemy_echo,
+    },
+)
+_sessionmaker = async_sessionmaker(_engine, **config.sqlalchemy_session_options)
+
 
 def get_engine() -> AsyncEngine:
-    try:
-        return _engine
-    except NameError:
-        raise ValueError("nonebot-plugin-orm has not been initialized") from None
+    return _engine
 
 
 @wraps(lambda: None)
 async def get_session(
     *, class_: Optional[Type[_AS]] = None, **kwargs: Any
 ) -> AsyncGenerator[Union[_AS, AsyncSession], None]:
-    try:
-        session = (
-            _sessionmaker(**kwargs)
-            if class_ is None
-            else class_(_engine, **{**config.sqlalchemy_session_options, **kwargs})
-        )
-    except NameError:
-        raise ValueError("nonebot-plugin-orm has not been initialized") from None
+    session = (
+        _sessionmaker(**kwargs)
+        if class_ is None
+        else class_(_engine, **{**config.sqlalchemy_session_options, **kwargs})
+    )
 
     async with session:
         yield session
@@ -57,19 +59,7 @@ async def get_session(
 
 @_driver.on_startup
 async def _() -> None:
-    global _engine, _sessionmaker
-
-    _engine = create_async_engine(
-        config.sqlalchemy_database_uri,
-        **{
-            **config.sqlalchemy_engine_options,
-            "echo": config.sqlalchemy_echo,
-            "echo_pool": config.sqlalchemy_echo,
-        },
-    )
-    _sessionmaker = async_sessionmaker(_engine, **config.sqlalchemy_session_options)
-
-    # TODO: `alembic check` at startup
+    ...  # TODO: `alembic check` at startup
 
 
 from .sql import one as one
