@@ -1,9 +1,9 @@
 from __future__ import annotations
 
+from typing import Any
 from pathlib import Path
-from typing import Any, Dict
 
-from pydantic import BaseModel, Extra, validator
+from pydantic import Extra, BaseModel, validator
 
 from alembic.config import Config as AlembicConfig
 
@@ -17,10 +17,10 @@ class Config(BaseModel, extra=Extra.ignore):
     sqlalchemy_echo: bool = False
 
     alembic_config: dict[str, Any] = {}
-    alembic_context: Dict[str, Any] = {"compare_type": True, "render_as_batch": True}
+    alembic_context: dict[str, Any] = {"compare_type": True, "render_as_batch": True}
 
     @validator("alembic_context")
-    def validate_alembic_context(cls, v: Dict[str, Any]) -> Dict[str, Any]:
+    def validate_alembic_context(cls, v: dict[str, Any]) -> dict[str, Any]:
         return {**cls.alembic_context, **v}
 
     def get_alembic_config(self) -> AlembicConfig:

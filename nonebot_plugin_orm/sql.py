@@ -1,23 +1,38 @@
 from __future__ import annotations
 
+import sys
 from functools import wraps
+from contextlib import suppress
 from abc import ABCMeta, abstractmethod
-from inspect import Parameter, Signature
 from typing import Any, Union, Generic, TypeVar
+from inspect import Parameter, Signature, signature
 from collections.abc import Callable, Sequence, Coroutine
-from typing_extensions import Self, Unpack, TypeVarTuple, override
 
 import sqlalchemy as sa
-from sqlalchemy import Row
 from nonebot.params import Depends
-from sqlalchemy.exc import InvalidRequestError
 from sqlalchemy.sql.compiler import SQLCompiler
-from sqlalchemy.sql import ColumnExpressionArgument
+from sqlalchemy import Row, ColumnExpressionArgument
+from sqlalchemy.sql.elements import SQLCoreOperations
+from sqlalchemy.exc import NoResultFound, InvalidRequestError
+from sqlalchemy.sql.roles import ExpressionElementRole, TypedColumnsClauseRole
 from sqlalchemy.ext.asyncio import AsyncResult, AsyncSession, AsyncScalarResult
 
 from .utils import _return_eq
 from .model import DependsInner
 from . import get_engine, get_session
+
+if sys.version_info >= (3, 12):
+    from typing import Self, Unpack, TypeVarTuple, override  # nopycln: import
+elif sys.version_info >= (3, 11):
+    from typing_extensions import override  # nopycln: import
+    from typing import Self, Unpack, TypeVarTuple  # nopycln: import
+else:
+    from typing_extensions import (  # nopycln: import
+        Self,
+        Unpack,
+        TypeVarTuple,
+        override,
+    )
 
 __all__ = (
     "one",
@@ -34,6 +49,12 @@ __all__ = (
 
 _T = TypeVar("_T")
 _Ts = TypeVarTuple("_Ts")
+_TypedColumnClauseArgument = Union[
+    TypedColumnsClauseRole[_T],
+    SQLCoreOperations[_T],
+    ExpressionElementRole[_T],
+    "type[_T]",
+]
 
 
 class SelectBase(Generic[_T], metaclass=ABCMeta):
@@ -87,7 +108,9 @@ class Select(sa.Select["tuple[Unpack[_Ts]]"], SelectBase[Row["tuple[Unpack[_Ts]]
 
         compiled = SQLCompiler(get_engine().dialect, self._final)
         parameters = [
-            Parameter("session", Parameter.KEYWORD_ONLY, default=Depends(get_session)),
+            Parameter(
+                "__session__", Parameter.KEYWORD_ONLY, default=Depends(get_session)
+            ),
             *(
                 Parameter(name, Parameter.KEYWORD_ONLY, default=depends)
                 for name, depends in compiled.params.items()
@@ -99,10 +122,11 @@ class Select(sa.Select["tuple[Unpack[_Ts]]"], SelectBase[Row["tuple[Unpack[_Ts]]
 
     @override
     async def __call__(
-        self, *, session: AsyncSession, **kwargs: Any
+        self, *, __session__: AsyncSession, **kwargs: Any
     ) -> AsyncResult[tuple[Unpack[_Ts]]]:
-        return await session.stream(self._final, kwargs)
+        return await __session__.stream(self._final, kwargs)
 
+    @override
     def where(
         self,
         sig_or_clause: Signature | ColumnExpressionArgument[bool] | None = None,
@@ -157,33 +181,76 @@ class ScalarSelect(sa.ScalarSelect[_T], SelectBase[_T]):
     element: Select[_T]
 
     @property
+    @override
     def __signature__(self) -> Signature:
         return self.element.__signature__
 
     @override
     async def __call__(
-        self, *, session: AsyncSession, **kwargs: Any
+        self, *, __session__: AsyncSession, **kwargs: Any
     ) -> AsyncScalarResult[_T]:
-        return (await self.element(session=session, **kwargs)).scalars()
+        return (await self.element(__session__=__session__, **kwargs)).scalars()
 
 
-def scalars(entity: type[_T]) -> ScalarSelect[_T]:
+def scalars(entity: _TypedColumnClauseArgument[_T]) -> ScalarSelect[_T]:
     return ScalarSelect(Select(entity))
 
 
-def scalar_all(entity: type[_T]) -> Callable[..., Coroutine[Any, Any, Sequence[_T]]]:
+def scalar_all(
+    entity: _TypedColumnClauseArgument[_T],
+) -> Callable[..., Coroutine[Any, Any, Sequence[_T]]]:
     return scalars(entity).all()
 
 
-def scalar_first(entity: type[_T]) -> Callable[..., Coroutine[Any, Any, _T | None]]:
+def scalar_first(
+    entity: _TypedColumnClauseArgument[_T],
+) -> Callable[..., Coroutine[Any, Any, _T | None]]:
     return scalars(entity).first()
 
 
-def scalar_one(entity: type[_T]) -> Callable[..., Coroutine[Any, Any, _T]]:
+def scalar_one(
+    entity: _TypedColumnClauseArgument[_T],
+) -> Callable[..., Coroutine[Any, Any, _T]]:
     return scalars(entity).one()
 
 
 def scalar_one_or_none(
-    entity: type[_T],
+    entity: _TypedColumnClauseArgument[_T],
 ) -> Callable[..., Coroutine[Any, Any, _T | None]]:
     return scalars(entity).one_or_none()
+
+
+def one_or_create(
+    entity: type[_T], defaults: dict[str, Any] | None = None, **criterions: Any
+) -> Callable[..., Coroutine[Any, Any, _T]]:
+    defaults = defaults or {}
+    parameters = dict(signature(entity).parameters.items())
+    for name, value in criterions.items():
+        if isinstance(value, DependsInner):
+            parameters[name] = Parameter(name, Parameter.KEYWORD_ONLY, default=value)
+            del criterions[name]
+        else:
+            with suppress(KeyError):
+                del parameters[name]
+
+    async def _one_or_create(__session__: AsyncSession, **kwargs: Any) -> _T:
+        try:
+            return await (
+                await __session__.stream_scalars(
+                    select(entity).filter_by(**criterions, **kwargs)
+                )
+            ).one()
+        except NoResultFound:
+            instance = entity(**defaults, **criterions, **kwargs)
+            __session__.add(instance)
+            return instance
+
+    _one_or_create.__signature__ = Signature(
+        (
+            Parameter(
+                "__session__", Parameter.KEYWORD_ONLY, default=Depends(get_session)
+            ),
+            *parameters.values(),
+        )
+    )
+    return _one_or_create
