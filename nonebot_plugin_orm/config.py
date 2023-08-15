@@ -1,27 +1,23 @@
 from __future__ import annotations
 
 from typing import Any
-from pathlib import Path
 
-from pydantic import Extra, BaseModel, validator
-
-from alembic.config import Config as AlembicConfig
+from sqlalchemy import URL
+from pydantic import Extra, BaseModel
+from sqlalchemy.ext.asyncio import AsyncEngine
 
 __all__ = ("Config",)
 
 
 class Config(BaseModel, extra=Extra.ignore):
-    sqlalchemy_database_url: str
+    sqlalchemy_database_url: str | URL = ""
+    sqlalchemy_binds: dict[Any, str | URL | AsyncEngine] = {}
     sqlalchemy_engine_options: dict[str, Any] = {}
     sqlalchemy_session_options: dict[str, Any] = {}
     sqlalchemy_echo: bool = False
 
     alembic_config: dict[str, Any] = {}
     alembic_context: dict[str, Any] = {"compare_type": True, "render_as_batch": True}
-
-    @validator("alembic_context")
-    def validate_alembic_context(cls, v: dict[str, Any]) -> dict[str, Any]:
-        return {**cls.alembic_context, **v}
 
     def get_alembic_config(self) -> AlembicConfig:
         config = AlembicConfig()

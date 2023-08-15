@@ -1,16 +1,20 @@
-from functools import wraps
-from typing import Any, Type, Union, TypeVar, Optional, AsyncGenerator
+from __future__ import annotations
 
+from functools import partial
+
+from sqlalchemy import URL
 from nonebot import get_driver
 from nonebot.plugin import PluginMetadata
+from nonebot.matcher import current_matcher
 from sqlalchemy.ext.asyncio import (
-    AsyncEngine,
     AsyncSession,
     async_sessionmaker,
     create_async_engine,
+    async_scoped_session,
 )
 
 from .config import Config
+from .model import Model, _models
 
 __plugin_meta__ = PluginMetadata(
     name="nonebot-plugin-orm",
@@ -21,44 +25,55 @@ __plugin_meta__ = PluginMetadata(
     config=Config,
 )
 
-_AS = TypeVar("_AS", bound=AsyncSession)
 
 _driver = get_driver()
 
 global_config = _driver.config
 config = Config.parse_obj(global_config)
 
-_engine = create_async_engine(
-    config.sqlalchemy_database_url,
-    **{
-        **config.sqlalchemy_engine_options,
-        "echo": config.sqlalchemy_echo,
-        "echo_pool": config.sqlalchemy_echo,
-    },
-)
-_sessionmaker = async_sessionmaker(_engine, **config.sqlalchemy_session_options)
 
-
-def get_engine() -> AsyncEngine:
-    return _engine
-
-
-@wraps(lambda: None)
-async def get_session(
-    *, class_: Optional[Type[_AS]] = None, **kwargs: Any
-) -> AsyncGenerator[Union[_AS, AsyncSession], None]:
-    session = (
-        _sessionmaker(**kwargs)
-        if class_ is None
-        else class_(_engine, **{**config.sqlalchemy_session_options, **kwargs})
+_default_bind = config.sqlalchemy_database_url or config.sqlalchemy_binds.pop(None)
+if isinstance(_default_bind, (str, URL)):
+    _default_bind = create_async_engine(
+        _default_bind,
+        **{
+            **config.sqlalchemy_engine_options,
+            "echo": config.sqlalchemy_echo,
+            "echo_pool": config.sqlalchemy_echo,
+        },
     )
+_binds = {
+    key: create_async_engine(
+        bind,
+        **{
+            **config.sqlalchemy_engine_options,
+            "echo": config.sqlalchemy_echo,
+            "echo_pool": config.sqlalchemy_echo,
+        },
+    )
+    if isinstance(bind, (str, URL))
+    else bind
+    for key, bind in config.sqlalchemy_binds.items()
+    if key is not None
+}
+_session_factory = async_sessionmaker(
+    _default_bind, **{**config.sqlalchemy_session_options, "binds": _binds}
+)
 
-    async with session:
-        yield session
+
+async def get_scoped_session() -> async_scoped_session[AsyncSession]:
+    return async_scoped_session(
+        _session_factory, scopefunc=partial(current_matcher.get, None)
+    )
 
 
 @_driver.on_startup
 async def _() -> None:
+    for key, models in _models.items():
+        if key is None or (bind := _binds.get(key)) is None:
+            continue
+        for model in models:
+            _binds[model] = bind
     ...  # TODO: `alembic check` at startup
 
 

@@ -12,14 +12,20 @@ import sqlalchemy as sa
 from nonebot.params import Depends
 from sqlalchemy.sql.compiler import SQLCompiler
 from sqlalchemy import Row, ColumnExpressionArgument
+from sqlalchemy.engine.default import DefaultDialect
 from sqlalchemy.sql.elements import SQLCoreOperations
 from sqlalchemy.exc import NoResultFound, InvalidRequestError
 from sqlalchemy.sql.roles import ExpressionElementRole, TypedColumnsClauseRole
-from sqlalchemy.ext.asyncio import AsyncResult, AsyncSession, AsyncScalarResult
+from sqlalchemy.ext.asyncio import (
+    AsyncResult,
+    AsyncSession,
+    AsyncScalarResult,
+    async_scoped_session,
+)
 
 from .utils import _return_eq
 from .model import DependsInner
-from . import get_engine, get_session
+from . import get_scoped_session
 
 if sys.version_info >= (3, 12):
     from typing import Self, Unpack, TypeVarTuple, override  # nopycln: import
@@ -56,12 +62,16 @@ _TypedColumnClauseArgument = Union[
     "type[_T]",
 ]
 
+_default_dialect = DefaultDialect()
+
 
 class SelectBase(Generic[_T], metaclass=ABCMeta):
     __signature__: Signature
 
     @abstractmethod
-    async def __call__(self, *, session: AsyncSession, **kwargs: Any) -> Any:
+    async def __call__(
+        self, *, session: async_scoped_session[AsyncSession], **kwargs: Any
+    ) -> Any:
         raise NotImplementedError
 
     def all(self) -> Callable[..., Coroutine[Any, Any, Sequence[_T]]]:
@@ -106,10 +116,12 @@ class Select(sa.Select["tuple[Unpack[_Ts]]"], SelectBase[Row["tuple[Unpack[_Ts]]
         except InvalidRequestError:
             self._final = self
 
-        compiled = SQLCompiler(get_engine().dialect, self._final)
+        compiled = SQLCompiler(_default_dialect, self._final)
         parameters = [
             Parameter(
-                "__session__", Parameter.KEYWORD_ONLY, default=Depends(get_session)
+                "__session__",
+                Parameter.KEYWORD_ONLY,
+                default=Depends(get_scoped_session),
             ),
             *(
                 Parameter(name, Parameter.KEYWORD_ONLY, default=depends)
@@ -122,7 +134,7 @@ class Select(sa.Select["tuple[Unpack[_Ts]]"], SelectBase[Row["tuple[Unpack[_Ts]]
 
     @override
     async def __call__(
-        self, *, __session__: AsyncSession, **kwargs: Any
+        self, *, __session__: async_scoped_session[AsyncSession], **kwargs: Any
     ) -> AsyncResult[tuple[Unpack[_Ts]]]:
         return await __session__.stream(self._final, kwargs)
 
@@ -187,7 +199,7 @@ class ScalarSelect(sa.ScalarSelect[_T], SelectBase[_T]):
 
     @override
     async def __call__(
-        self, *, __session__: AsyncSession, **kwargs: Any
+        self, *, __session__: async_scoped_session[AsyncSession], **kwargs: Any
     ) -> AsyncScalarResult[_T]:
         return (await self.element(__session__=__session__, **kwargs)).scalars()
 
@@ -233,7 +245,9 @@ def one_or_create(
             with suppress(KeyError):
                 del parameters[name]
 
-    async def _one_or_create(__session__: AsyncSession, **kwargs: Any) -> _T:
+    async def _one_or_create(
+        __session__: async_scoped_session[AsyncSession], **kwargs: Any
+    ) -> _T:
         try:
             return await (
                 await __session__.stream_scalars(
@@ -248,7 +262,9 @@ def one_or_create(
     _one_or_create.__signature__ = Signature(
         (
             Parameter(
-                "__session__", Parameter.KEYWORD_ONLY, default=Depends(get_session)
+                "__session__",
+                Parameter.KEYWORD_ONLY,
+                default=Depends(get_scoped_session),
             ),
             *parameters.values(),
         )

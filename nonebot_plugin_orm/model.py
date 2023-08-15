@@ -1,4 +1,7 @@
+from __future__ import annotations
+
 import sys
+from collections import defaultdict
 from typing import TYPE_CHECKING, Any
 from inspect import Parameter, Signature
 
@@ -17,11 +20,15 @@ else:
 __all__ = ("Model",)
 
 
+_models: dict[str | None, list[Model]] = defaultdict(list)
+
+
 DependsInner = type(Depends())
 
 
 class Model(DeclarativeBase):
     if TYPE_CHECKING:
+        __bind_key__: str
         __signature__: Signature
 
     def __init_subclass__(cls) -> None:
@@ -68,14 +75,17 @@ class Model(DeclarativeBase):
 
         cls.__signature__ = Signature(parameters)
 
-        return super().__init_subclass__()
+        super().__init_subclass__()
 
     @declared_attr.directive
     def __tablename__(cls) -> str:
         if plugin := get_plugin_by_module_name(cls.__module__):
-            plugin.metadata
             prefix = plugin.name.replace("-", "_") + "_"
+            bind_key = plugin.name
         else:
             prefix = ""
+            bind_key = None
+        bind_key = getattr(cls, "__bind_key__", bind_key)
+        _models[bind_key].append(cls)
 
         return prefix + cls.__name__.lower()
