@@ -23,15 +23,11 @@ from sqlalchemy.ext.asyncio import (
     async_scoped_session,
 )
 
-from .utils import _return_eq
-from .model import DependsInner
 from . import get_scoped_session
+from .utils import DependsInner, return_eq
 
 if sys.version_info >= (3, 12):
     from typing import Self, Unpack, TypeVarTuple, override  # nopycln: import
-elif sys.version_info >= (3, 11):
-    from typing_extensions import override  # nopycln: import
-    from typing import Self, Unpack, TypeVarTuple  # nopycln: import
 else:
     from typing_extensions import (  # nopycln: import
         Self,
@@ -50,6 +46,7 @@ __all__ = (
     "scalar_one",
     "one_or_none",
     "scalar_first",
+    "one_or_create",
     "scalar_one_or_none",
 )
 
@@ -112,7 +109,7 @@ class Select(sa.Select["tuple[Unpack[_Ts]]"], SelectBase[Row["tuple[Unpack[_Ts]]
     @override
     def __signature__(self) -> Signature:
         try:
-            self._final = self.filter_by(__signature__=_return_eq)
+            self._final = self.filter_by(__signature__=return_eq)
         except InvalidRequestError:
             self._final = self
 

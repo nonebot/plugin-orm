@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from typing import Any
 from functools import partial
 
 from sqlalchemy import URL
@@ -7,6 +8,7 @@ from nonebot import get_driver
 from nonebot.plugin import PluginMetadata
 from nonebot.matcher import current_matcher
 from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
     AsyncSession,
     async_sessionmaker,
     create_async_engine,
@@ -31,50 +33,46 @@ _driver = get_driver()
 global_config = _driver.config
 config = Config.parse_obj(global_config)
 
-
-_default_bind = config.sqlalchemy_database_url or config.sqlalchemy_binds.pop(None)
-if isinstance(_default_bind, (str, URL)):
-    _default_bind = create_async_engine(
-        _default_bind,
-        **{
-            **config.sqlalchemy_engine_options,
-            "echo": config.sqlalchemy_echo,
-            "echo_pool": config.sqlalchemy_echo,
-        },
-    )
-_binds = {
-    key: create_async_engine(
-        bind,
-        **{
-            **config.sqlalchemy_engine_options,
-            "echo": config.sqlalchemy_echo,
-            "echo_pool": config.sqlalchemy_echo,
-        },
-    )
-    if isinstance(bind, (str, URL))
-    else bind
-    for key, bind in config.sqlalchemy_binds.items()
-    if key is not None
+_engine_options = {
+    **config.sqlalchemy_engine_options,
+    "echo": config.sqlalchemy_echo,
+    "echo_pool": config.sqlalchemy_echo,
 }
+
+_bind = config.sqlalchemy_database_url or config.sqlalchemy_binds[None]
+if isinstance(_bind, (str, URL)):
+    _bind = create_async_engine(_bind, **_engine_options)
+
+_bind_map: dict[str, AsyncEngine] = {}
+_binds: dict[Any, AsyncEngine] = {}
+for key, bind in config.sqlalchemy_binds.items():
+    if isinstance(bind, (str, URL)):
+        bind = create_async_engine(bind, **_engine_options)
+
+    if isinstance(key, str):
+        _bind_map[key] = bind
+    else:
+        _binds[key] = bind
+
 _session_factory = async_sessionmaker(
-    _default_bind, **{**config.sqlalchemy_session_options, "binds": _binds}
+    _bind, **{**config.sqlalchemy_session_options, "binds": _binds}
 )
-
-
-async def get_scoped_session() -> async_scoped_session[AsyncSession]:
-    return async_scoped_session(
-        _session_factory, scopefunc=partial(current_matcher.get, None)
-    )
 
 
 @_driver.on_startup
 async def _() -> None:
     for key, models in _models.items():
-        if key is None or (bind := _binds.get(key)) is None:
+        if key is None or (bind := _bind_map.get(key)) is None:
             continue
         for model in models:
             _binds[model] = bind
     ...  # TODO: `alembic check` at startup
+
+
+def get_scoped_session() -> async_scoped_session[AsyncSession]:
+    return async_scoped_session(
+        _session_factory, scopefunc=partial(current_matcher.get, None)
+    )
 
 
 from .sql import one as one
@@ -88,6 +86,7 @@ from .sql import scalar_all as scalar_all
 from .sql import scalar_one as scalar_one
 from .sql import one_or_none as one_or_none
 from .sql import scalar_first as scalar_first
+from .sql import one_or_create as one_or_create
 from .sql import scalar_one_or_none as scalar_one_or_none
 
 __all__ = (
@@ -102,5 +101,6 @@ __all__ = (
     "scalar_one",
     "one_or_none",
     "scalar_first",
+    "one_or_create",
     "scalar_one_or_none",
 )

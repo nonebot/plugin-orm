@@ -5,11 +5,10 @@ from collections import defaultdict
 from typing import TYPE_CHECKING, Any
 from inspect import Parameter, Signature
 
-from nonebot.params import Depends
 from nonebot import get_plugin_by_module_name
 from sqlalchemy.orm import Mapped, DeclarativeBase, declared_attr
 
-from .utils import get_annotations
+from .utils import DependsInner, get_annotations
 
 if sys.version_info >= (3, 9):
     from typing import Annotated, get_args, get_origin  # nopycln: import
@@ -21,9 +20,6 @@ __all__ = ("Model",)
 
 
 _models: dict[str | None, list[Model]] = defaultdict(list)
-
-
-DependsInner = type(Depends())
 
 
 class Model(DeclarativeBase):

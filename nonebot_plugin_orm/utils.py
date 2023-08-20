@@ -3,7 +3,12 @@ from __future__ import annotations
 import sys
 from typing import TypeVar
 
+from nonebot.params import Depends
+
 _T = TypeVar("_T")
+
+
+DependsInner = type(Depends())
 
 
 class _ReturnEq:
@@ -11,7 +16,7 @@ class _ReturnEq:
         return __o
 
 
-_return_eq = _ReturnEq()
+return_eq = _ReturnEq()
 
 
 if sys.version_info >= (3, 10):
