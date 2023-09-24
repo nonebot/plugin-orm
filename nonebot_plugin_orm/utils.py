@@ -121,14 +121,14 @@ else:
         if unwrap is not None:
             while True:
                 if hasattr(unwrap, "__wrapped__"):
-                    unwrap = unwrap.__wrapped__  # type: ignore
+                    unwrap = unwrap.__wrapped__  # type: ignore[attr-defined]
                     continue
                 if isinstance(unwrap, functools.partial):
                     unwrap = unwrap.func
                     continue
                 break
             if hasattr(unwrap, "__globals__"):
-                obj_globals = unwrap.__globals__  # type: ignore
+                obj_globals = unwrap.__globals__  # type: ignore[attr-defined]
 
         if globals is None:
             globals = obj_globals

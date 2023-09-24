@@ -8,6 +8,7 @@ authors = [
 ]
 dependencies = [
     "alembic~=1.11",
+    "click~=8.1",
     "nonebot2~=2.0",
     "sqlalchemy~=2.0",
     "typing-extensions~=4.4; python_version < '3.12'",
@@ -16,10 +17,14 @@ requires-python = ">=3.8"
 readme = "README.md"
 license = { text = "MIT" }
 keywords = ["nonebot", "orm", "sqlalchemy"]
+
 [project.urls]
 homepage = "https://github.com/nonebot/plugin-orm"
 repository = "https://github.com/nonebot/plugin-orm"
 documentation = "https://github.com/nonebot/plugin-orm"
+
+[project.entry-points.nb_scripts]
+orm = "nonebot_plugin_orm.migrate:main"
 
 [build-system]
 requires = ["pdm-backend"]

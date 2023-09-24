@@ -1,22 +1,20 @@
 from __future__ import annotations
 
-from typing import Any
 from functools import partial
 
-from sqlalchemy import URL
 from nonebot import get_driver
+from sqlalchemy import Table, MetaData
 from nonebot.plugin import PluginMetadata
 from nonebot.matcher import current_matcher
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
     async_sessionmaker,
-    create_async_engine,
     async_scoped_session,
 )
 
+from .model import Model
 from .config import Config
-from .model import Model, _models
 
 __plugin_meta__ = PluginMetadata(
     name="nonebot-plugin-orm",
@@ -33,39 +31,32 @@ _driver = get_driver()
 global_config = _driver.config
 config = Config.parse_obj(global_config)
 
-_engine_options = {
-    **config.sqlalchemy_engine_options,
-    "echo": config.sqlalchemy_echo,
-    "echo_pool": config.sqlalchemy_echo,
-}
-
-_bind = config.sqlalchemy_database_url or config.sqlalchemy_binds[None]
-if isinstance(_bind, (str, URL)):
-    _bind = create_async_engine(_bind, **_engine_options)
-
-_bind_map: dict[str, AsyncEngine] = {}
-_binds: dict[Any, AsyncEngine] = {}
-for key, bind in config.sqlalchemy_binds.items():
-    if isinstance(bind, (str, URL)):
-        bind = create_async_engine(bind, **_engine_options)
-
-    if isinstance(key, str):
-        _bind_map[key] = bind
-    else:
-        _binds[key] = bind
-
+_binds: dict[type[Model], AsyncEngine] = {}
 _session_factory = async_sessionmaker(
-    _bind, **{**config.sqlalchemy_session_options, "binds": _binds}
+    config.sqlalchemy_database_url,
+    **{**config.sqlalchemy_session_options, "binds": _binds},
 )
+
+_metadatas: dict[str, tuple[AsyncEngine, MetaData]] = {
+    name: (engine, MetaData()) for name, engine in config.sqlalchemy_binds.items()
+}
 
 
 @_driver.on_startup
-async def _() -> None:
-    for key, models in _models.items():
-        if key is None or (bind := _bind_map.get(key)) is None:
+def _init_orm() -> None:
+    for model in Model.__subclasses__():
+        table: Table | None = getattr(model, "__table__", None)
+
+        if table is None:
             continue
-        for model in models:
-            _binds[model] = bind
+
+        if (bind_key := table.info.get("bind_key")) is None:
+            return
+
+        engine, metadata = _metadatas.get(bind_key, _metadatas[""])
+        _binds[model] = engine
+        table.to_metadata(metadata)
+
     ...  # TODO: `alembic check` at startup
 
 

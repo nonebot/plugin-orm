@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import sys
-from collections import defaultdict
-from typing import TYPE_CHECKING, Any
 from inspect import Parameter, Signature
+from typing import TYPE_CHECKING, Any, ClassVar
 
+from sqlalchemy import Table
 from nonebot import get_plugin_by_module_name
-from sqlalchemy.orm import Mapped, DeclarativeBase, declared_attr
+from sqlalchemy.orm import Mapped, DeclarativeBase
 
 from .utils import DependsInner, get_annotations
 
@@ -19,69 +19,89 @@ else:
 __all__ = ("Model",)
 
 
-_models: dict[str | None, list[Model]] = defaultdict(list)
+def _setup_di(cls: type[Model]) -> None:
+    """Get signature for NoneBot's dependency injection,
+    and set annotations for SQLAlchemy declarative class.
+    """
+
+    parameters: list[Parameter] = []
+
+    annotations: dict[str, Any] = {}
+    for base in reversed(cls.__mro__):
+        annotations.update(get_annotations(base, eval_str=True))
+
+    for name, type_annotation in annotations.items():
+        # Check if the attribute is both a dependent and a mapped column
+        depends_inner = None
+        if isinstance(get_origin(type_annotation), Annotated):
+            (type_annotation, *extra_args) = get_args(type_annotation)
+            depends_inner = next(
+                (x for x in extra_args if isinstance(x, DependsInner)), None
+            )
+
+        if not isinstance(get_origin(type_annotation), Mapped):
+            continue
+
+        default = getattr(cls, name, Signature.empty)
+
+        depends_inner = default if isinstance(default, DependsInner) else depends_inner
+        if depends_inner is None:
+            continue
+
+        # Set parameter for NoneBot dependency injection
+        parameters.append(
+            Parameter(
+                name,
+                Parameter.KEYWORD_ONLY,
+                default=depends_inner,
+                annotation=get_args(type_annotation)[0],
+            )
+        )
+
+        # Set annotation for SQLAlchemy declarative class
+        cls.__annotations__[name] = type_annotation
+        if default is not Signature.empty and not isinstance(default, Mapped):
+            delattr(cls, name)
+
+    cls.__signature__ = Signature(parameters)
+
+
+def _setup_tablename(cls: type[Model]) -> None:
+    for attr in ("__abstract__", "__tablename__", "__table__"):
+        if getattr(cls, attr, None):
+            return
+
+    cls.__tablename__ = cls.__name__.lower()
+
+    if plugin := get_plugin_by_module_name(cls.__module__):
+        cls.__tablename__ = f"{plugin.name.replace('-', '_')}_{cls.__tablename__}"
+
+
+def _setup_bind(cls: type[Model]) -> None:
+    bind_key: str | None = getattr(cls, "__bind_key__", None)
+
+    if bind_key is None:
+        if plugin := get_plugin_by_module_name(cls.__module__):
+            bind_key = plugin.name
+        else:
+            bind_key = ""
+
+    cls.__table__.info["bind_key"] = bind_key
 
 
 class Model(DeclarativeBase):
     if TYPE_CHECKING:
-        __bind_key__: str
-        __signature__: Signature
+        __table__: ClassVar[Table]
+        __bind_key__: ClassVar[str]
+        __signature__: ClassVar[Signature]
 
     def __init_subclass__(cls) -> None:
-        parameters: list[Parameter] = []
-
-        annotations: dict[str, Any] = {}
-        for base in reversed(cls.__mro__):
-            annotations.update(get_annotations(base, eval_str=True))
-
-        for name, type_annotation in annotations.items():
-            # Check if the attribute is both a dependent and a mapped column
-            depends_inner = None
-            if get_origin(type_annotation) is Annotated:
-                type_annotation, *extra_args = get_args(type_annotation)
-                depends_inner = next(
-                    (x for x in extra_args if isinstance(x, DependsInner)), None
-                )
-
-            if get_origin(type_annotation) is not Mapped:
-                continue
-
-            default = getattr(cls, name, Signature.empty)
-
-            depends_inner = (
-                default if isinstance(default, DependsInner) else depends_inner
-            )
-            if depends_inner is None:
-                continue
-
-            # Set parameter for NoneBot dependency injection
-            parameters.append(
-                Parameter(
-                    name,
-                    Parameter.KEYWORD_ONLY,
-                    default=depends_inner,
-                    annotation=get_args(type_annotation)[0],
-                )
-            )
-
-            # Set annotation for SQLAlchemy declarative class
-            cls.__annotations__[name] = type_annotation
-            if default is not Signature.empty and not isinstance(default, Mapped):
-                delattr(cls, name)
-
-        cls.__signature__ = Signature(parameters)
+        _setup_di(cls)
+        _setup_tablename(cls)
 
         super().__init_subclass__()
 
-    @declared_attr.directive
-    def __tablename__(cls) -> str:
-        if plugin := get_plugin_by_module_name(cls.__module__):
-            prefix = plugin.name.replace("-", "_") + "_"
-            bind_key = plugin.name
-        else:
-            prefix = ""
-            bind_key = None
-        bind_key = getattr(cls, "__bind_key__", bind_key)
-        _models[bind_key].append(cls)
+        if not hasattr(cls, "__table__"):
+            return
 
-        return prefix + cls.__name__.lower()
+        _setup_bind(cls)
