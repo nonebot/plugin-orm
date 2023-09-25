@@ -21,12 +21,24 @@ branch_labels: str | Sequence[str] | None = ${repr(branch_labels)}
 depends_on: str | Sequence[str] | None = ${repr(depends_on)}
 
 
-def upgrade(name: str) -> None:
+def upgrade(name: str | None = None) -> None:
+    if name is None:  # 兼容 generic 模板
+        for name, func in globals().items():
+            if name.startswith("upgrade_"):
+                func()
+        return
+
     with suppress(KeyError):
         globals()[f"upgrade_{name}"]()
 
 
-def downgrade(name: str) -> None:
+def downgrade(name: str | None = None) -> None:
+    if name is None:  # 兼容 generic 模板
+        for name, func in reversed(globals().items()):
+            if name.startswith("downgrade_"):
+                func()
+        return
+
     with suppress(KeyError):
         globals()[f"downgrade_{name}"]()
 

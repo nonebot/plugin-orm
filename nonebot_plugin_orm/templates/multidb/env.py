@@ -61,6 +61,7 @@ def run_migrations_offline() -> None:
                 target_metadata=metadata,
                 literal_binds=True,
                 dialect_opts={"paramstyle": "named"},
+                **plugin_config.alembic_context,
             )
             with context.begin_transaction(), config.status(
                 f"迁移数据库 {name or '<default>'} 中"

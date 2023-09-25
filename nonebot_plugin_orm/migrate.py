@@ -148,12 +148,12 @@ def orm(
         if plugin.metadata and (
             version_location := plugin.metadata.extra.get("orm_version_location")
         ):
-            shutil.copytree(version_location, temp_version_locations / plugin.name)
-            version_locations_str.append(temp_version_locations / plugin.name)
+            with suppress(FileNotFoundError):
+                shutil.copytree(version_location, temp_version_locations / plugin.name)
+                version_locations_str.append(temp_version_locations / plugin.name)
 
     # project scope replacement scripts
     if version_locations := plugin_config.alembic_version_locations.get(""):
-        # 有可能尚未 init，默认 version_locations 不存在
         with suppress(FileNotFoundError):
             shutil.copytree(
                 version_locations, temp_version_locations, dirs_exist_ok=True
@@ -166,11 +166,12 @@ def orm(
     ) in plugin_config.alembic_version_locations.items():
         if not plugin_name:
             continue
-        shutil.copytree(
-            version_location,
-            temp_version_locations / plugin_name,
-            dirs_exist_ok=True,
-        )
+        with suppress(FileNotFoundError):
+            shutil.copytree(
+                version_location,
+                temp_version_locations / plugin_name,
+                dirs_exist_ok=True,
+            )
 
     config.add_version_path(*version_locations_str)
 
@@ -204,13 +205,13 @@ def list_templates(config: AlembicConfig) -> None:
     default=Path("migrations"),
     type=click.Path(file_okay=False, writable=True, resolve_path=True, path_type=Path),
 )
-@click.option("-t", "--template", default="multidb")
+@click.option("-t", "--template", default="generic")
 @click.option("--package", is_flag=True)
 @click.pass_obj
 def init(
     config: AlembicConfig,
     directory: Path = Path("migrations"),
-    template: str = "multidb",
+    template: str = "generic",
     package: bool = False,
 ) -> None:
     """初始化脚本目录。
