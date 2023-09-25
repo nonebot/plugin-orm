@@ -85,10 +85,8 @@ def orm(
     x: tuple[str, ...] = (),
     quite: bool = False,
 ) -> AlembicConfig:
-    from . import _init_orm, _metadatas
+    from . import _metadatas
     from . import config as plugin_config
-
-    _init_orm()
 
     config = config or plugin_config.alembic_config
     if isinstance(config, AlembicConfig):
@@ -272,7 +270,7 @@ def revision(
             )
         config.add_version_path(version_path)
         config.print_stdout(
-            f'临时将目录 "{version_path}" 添加到版本目录中，请稍后将其添加到配置文件的 version_locations 中',
+            f'临时将目录 "{version_path}" 添加到版本目录中，请稍后将其添加到 VERSION_LOCATIONS 中',
             fg="yellow",
         )
 
@@ -809,6 +807,7 @@ def stamp(
 
     """
 
+    revisions = revisions or ("heads",)
     script = ScriptDirectory.from_config(config)
 
     starting_rev = None
@@ -921,4 +920,7 @@ def ensure_version(config: Config, sql: bool = False) -> None:
 
 
 def main() -> None:
+    from . import _init_orm
+
+    _init_orm()
     orm(prog_name="nb orm")

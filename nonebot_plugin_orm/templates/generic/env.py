@@ -1,8 +1,8 @@
-import asyncio
 from typing import cast
 
 from alembic import context
 from sqlalchemy import Connection
+from sqlalchemy.util import await_fallback
 
 from nonebot_plugin_orm import Model
 from nonebot_plugin_orm.migrate import AlembicConfig
@@ -72,4 +72,4 @@ async def run_migrations_online() -> None:
 if context.is_offline_mode():
     run_migrations_offline()
 else:
-    asyncio.run(run_migrations_online())
+    await_fallback(run_migrations_online())

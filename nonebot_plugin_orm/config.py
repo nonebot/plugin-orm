@@ -78,3 +78,4 @@ class Config(BaseModel, arbitrary_types_allowed=True):
         return {"": values["alembic_script_location"] / "versions"} if v is None else v
 
     alembic_context: Dict[str, Any] = {"render_as_batch": True}
+    alembic_startup_check: bool = True

@@ -5,17 +5,17 @@ from operator import methodcaller
 from typing import TYPE_CHECKING, cast
 
 from alembic import context
-from sqlalchemy import TwoPhaseTransaction
+from sqlalchemy.util import await_fallback
 
 from nonebot_plugin_orm.migrate import AlembicConfig
 from nonebot_plugin_orm import config as plugin_config
 
 if TYPE_CHECKING:
-    from sqlalchemy import MetaData, Connection
     from alembic.migration import MigrationContext
     from alembic.operations import MigrateOperation
     from alembic.operations.ops import MigrationScript
     from sqlalchemy.ext.asyncio import AsyncEngine, AsyncConnection
+    from sqlalchemy import MetaData, Connection, TwoPhaseTransaction
 
 # 是否使用二阶段提交 (Two-Phase Commit)，
 # 当同时迁移多个数据库时，可以启用以保证迁移的原子性。
@@ -142,4 +142,4 @@ async def run_migrations_online() -> None:
 if context.is_offline_mode():
     run_migrations_offline()
 else:
-    asyncio.run(run_migrations_online())
+    await_fallback(run_migrations_online())

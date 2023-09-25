@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from functools import partial
+from contextlib import AsyncExitStack, suppress
 
-from nonebot import get_driver
+from nonebot import logger, get_driver
 from sqlalchemy import Table, MetaData
 from nonebot.plugin import PluginMetadata
+from sqlalchemy.util import greenlet_spawn
 from nonebot.matcher import current_matcher
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
@@ -13,6 +15,7 @@ from sqlalchemy.ext.asyncio import (
     async_scoped_session,
 )
 
+from .migrate import orm
 from .model import Model
 from .config import Config
 
@@ -42,7 +45,6 @@ _metadatas: dict[str, tuple[AsyncEngine, MetaData]] = {
 }
 
 
-@_driver.on_startup
 def _init_orm() -> None:
     for model in Model.__subclasses__():
         table: Table | None = getattr(model, "__table__", None)
@@ -57,7 +59,32 @@ def _init_orm() -> None:
         _binds[model] = engine
         table.to_metadata(metadata)
 
-    ...  # TODO: `alembic check` at startup
+
+@_driver.on_startup
+async def _() -> None:
+    _init_orm()
+
+    if config.alembic_startup_check:
+        try:
+            await greenlet_spawn(orm, ["check"])
+        except SystemExit as e:
+            if e.code:
+                logger.critical(
+                    "ORM 启动检查失败，请迁移数据库到最新修订版本，"
+                    "或配置 ALEMBIC_STARTUP_CHECK = false 以关闭启动检查"
+                    "（仅用于测试目的，谨慎使用）"
+                )
+                raise
+    else:
+        logger.warning("跳过 ORM 启动检查，直接创建所有表并标记数据库为最新修订版本")
+
+        async with AsyncExitStack() as stack:
+            for engine, metadata in _metadatas.values():
+                connection = await stack.enter_async_context(engine.begin())
+                await connection.run_sync(metadata.create_all)
+
+            with suppress(SystemExit):
+                await greenlet_spawn(orm, ["stamp"])
 
 
 def get_scoped_session() -> async_scoped_session[AsyncSession]:
