@@ -1,21 +1,19 @@
 from __future__ import annotations
 
 import asyncio
+from typing import cast
 from operator import methodcaller
-from typing import TYPE_CHECKING, cast
 
 from alembic import context
 from sqlalchemy.util import await_fallback
+from alembic.migration import MigrationContext
+from alembic.operations import MigrateOperation
+from alembic.operations.ops import MigrationScript
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncConnection
+from sqlalchemy import MetaData, Connection, TwoPhaseTransaction
 
-from nonebot_plugin_orm.migrate import AlembicConfig
+from nonebot_plugin_orm import AlembicConfig
 from nonebot_plugin_orm import config as plugin_config
-
-if TYPE_CHECKING:
-    from alembic.migration import MigrationContext
-    from alembic.operations import MigrateOperation
-    from alembic.operations.ops import MigrationScript
-    from sqlalchemy.ext.asyncio import AsyncEngine, AsyncConnection
-    from sqlalchemy import MetaData, Connection, TwoPhaseTransaction
 
 # 是否使用二阶段提交 (Two-Phase Commit)，
 # 当同时迁移多个数据库时，可以启用以保证迁移的原子性。
@@ -23,6 +21,12 @@ USE_TWOPHASE = False
 
 # Alembic Config 对象，它提供正在使用的 .ini 文件中的值。
 config = cast(AlembicConfig, context.config)
+
+# gather section names referring to different
+# databases.  These are named "engine1", "engine2"
+# in the sample .ini file.
+engines: dict[str, AsyncEngine] = config.attributes["engines"]
+
 
 # bind key 到 MetaData 的映射，用于 'autogenerate' 支持。
 # Metadata 对象必须仅包含对应数据库中的表。
@@ -32,9 +36,7 @@ config = cast(AlembicConfig, context.config)
 #       'engine1':mymodel.metadata1,
 #       'engine2':mymodel.metadata2
 # }
-target_metadata: dict[str, tuple[AsyncEngine, MetaData]] = config.attributes[
-    "metadatas"
-]
+target_metadatas: dict[str, MetaData] = config.attributes["metadatas"]
 
 # 其他来自 config 的值，可以按 env.py 的需求定义，例如可以获取：
 # my_important_option = config.get_main_option("my_important_option")
@@ -52,13 +54,13 @@ def run_migrations_offline() -> None:
     """
     # 使用 --sql 选项的情况下，将每个 URL 的迁移写入到单独的文件中。
 
-    for name, (engine, metadata) in target_metadata.items():
+    for name, engine in engines.items():
         file_ = f"{name}.sql"
         with open(file_, "w") as buffer:
             context.configure(
                 url=engine.url,
                 output_buffer=buffer,
-                target_metadata=metadata,
+                target_metadata=target_metadatas["name"],
                 literal_binds=True,
                 dialect_opts={"paramstyle": "named"},
                 **plugin_config.alembic_context,
@@ -113,7 +115,7 @@ async def run_migrations_online() -> None:
     txns: dict[str, TwoPhaseTransaction] = {}
 
     try:
-        for name, (engine, metadata) in target_metadata.items():
+        for name, engine in engines.items():
             if not (conn := conns.get(name)):
                 conn = conns[name] = await engine.connect()
                 if USE_TWOPHASE:
@@ -121,7 +123,7 @@ async def run_migrations_online() -> None:
                 else:
                     await conn.begin()
 
-            await conn.run_sync(do_run_migrations, name, metadata)
+            await conn.run_sync(do_run_migrations, name, target_metadatas[name])
 
         if USE_TWOPHASE:
             await asyncio.gather(

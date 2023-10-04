@@ -27,14 +27,9 @@ from . import get_scoped_session
 from .utils import DependsInner, return_eq
 
 if sys.version_info >= (3, 12):
-    from typing import Self, Unpack, TypeVarTuple, override  # nopycln: import
+    from typing import Self, Unpack, TypeVarTuple, override
 else:
-    from typing_extensions import (  # nopycln: import
-        Self,
-        Unpack,
-        TypeVarTuple,
-        override,
-    )
+    from typing_extensions import Self, Unpack, TypeVarTuple, override
 
 __all__ = (
     "one",

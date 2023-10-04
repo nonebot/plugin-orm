@@ -1,20 +1,13 @@
 from __future__ import annotations
 
-import sys
 from inspect import Parameter, Signature
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, Annotated, get_args, get_origin
 
 from sqlalchemy import Table
 from nonebot import get_plugin_by_module_name
 from sqlalchemy.orm import Mapped, DeclarativeBase
 
 from .utils import DependsInner, get_annotations
-
-if sys.version_info >= (3, 9):
-    from typing import Annotated, get_args, get_origin  # nopycln: import
-else:
-    from typing_extensions import Annotated, get_args, get_origin  # nopycln: import
-
 
 __all__ = ("Model",)
 

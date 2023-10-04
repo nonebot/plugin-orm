@@ -1,15 +1,16 @@
 from __future__ import annotations
 
 import os
+import sys
 import shutil
-from os import PathLike
 from pathlib import Path
 from argparse import Namespace
-from collections.abc import Generator
-from typing import Any, Sequence, cast
+from typing import Any, TextIO, cast
 from tempfile import TemporaryDirectory
 from configparser import DuplicateSectionError
+from importlib.resources import files, as_file
 from contextlib import suppress, contextmanager
+from collections.abc import Mapping, Iterable, Sequence, Generator
 
 import click
 from alembic.config import Config
@@ -23,10 +24,146 @@ from alembic.autogenerate.api import RevisionContext
 from alembic.util.langhelpers import rev_id as _rev_id
 from alembic.runtime.environment import EnvironmentContext, ProcessRevisionDirectiveFn
 
+from .utils import is_editable
+from .config import config as plugin_config
+
+if sys.version_info >= (3, 12):
+    from typing import Self
+else:
+    from typing_extensions import Self
+
+
+__all__ = (
+    "AlembicConfig",
+    "list_templates",
+    "init",
+    "revision",
+    "check",
+    "merge",
+    "upgrade",
+    "downgrade",
+    "show",
+    "history",
+    "heads",
+    "branches",
+    "current",
+    "stamp",
+    "edit",
+    "ensure_version",
+)
+
+
+_SPLIT_ON_PATH = {
+    None: " ",
+    "space": " ",
+    "os": os.pathsep,
+    ":": ":",
+    ";": ";",
+}
+
 
 class AlembicConfig(Config):
+    _temp_dir: TemporaryDirectory
+    _plugin_version_locations: dict[str, Path]
+
+    def __init__(
+        self,
+        file_: str | os.PathLike[str] | None = None,
+        ini_section: str = "alembic",
+        output_buffer: TextIO | None = None,
+        stdout: TextIO = sys.stdout,
+        cmd_opts: Namespace | None = None,
+        config_args: Mapping[str, Any] = {},
+        attributes: dict = {},
+    ) -> None:
+        from . import _engines, _metadatas
+
+        if plugin_config.alembic_script_location:
+            script_location = plugin_config.alembic_script_location
+        elif (
+            Path("migrations/env.py").exists()
+            and Path("migrations/script.py.mako").exists()
+        ):
+            script_location = "migrations"
+        else:
+            script_location = str(Path(__file__).parent / "templates" / "multidb")
+
+        super().__init__(
+            file_,
+            ini_section,
+            output_buffer,
+            stdout,
+            cmd_opts,
+            {
+                "script_location": script_location,
+                "prepend_sys_path": ".",
+                "revision_environment": "true",
+                "version_path_separator": "os",
+                **config_args,
+            },
+            {
+                "engines": _engines,
+                "metadatas": _metadatas,
+                **attributes,
+            },
+        )
+
+        self._init_post_write_hooks()
+
+    def __enter__(self) -> Self:
+        self._temp_dir = TemporaryDirectory()
+
+        if self.get_main_option("version_locations"):
+            # NOTE: skip if explicitly set
+            return self
+
+        if not plugin_config.alembic_version_locations:
+            self._plugin_version_locations = {"": Path("migrations/versions")}
+        elif isinstance(plugin_config.alembic_version_locations, dict):
+            self._plugin_version_locations = {
+                name: Path(path)
+                for name, path in plugin_config.alembic_version_locations.items()
+            }
+        else:
+            # NOTE: special case: mono repo with a central version location
+            self._plugin_version_locations = {
+                "": Path(plugin_config.alembic_version_locations)
+            }
+
+        temp_version_locations = Path(self._temp_dir.name)
+        self._add_version_location(temp_version_locations)
+
+        for plugin in get_loaded_plugins():
+            if not plugin.metadata or not (
+                version_module := plugin.metadata.extra.get("orm_version_location")
+            ):
+                continue
+
+            with as_file(files(version_module)) as version_location:
+                if is_editable(plugin):
+                    self._add_version_location(version_location)
+                else:
+                    # NOTE: read-only, copy to temp dir
+                    self._add_version_location(temp_version_locations / plugin.name)
+                    shutil.copytree(
+                        version_location, temp_version_locations / plugin.name
+                    )
+
+        for plugin_name, version_location in self._plugin_version_locations.items():
+            with suppress(FileNotFoundError):
+                shutil.copytree(
+                    version_location,
+                    temp_version_locations / plugin_name,
+                    dirs_exist_ok=True,
+                )
+
+        return self
+
+    def __exit__(self, *_) -> None:
+        self._temp_dir.cleanup()
+
     def get_template_directory(self) -> str:
-        return str(Path(__file__).with_name("templates"))
+        return str(Path(__file__).parent / "templates")
 
     def print_stdout(self, text: str, *arg, **kwargs) -> None:
         if not getattr(self.cmd_opts, "quite", False):
@@ -45,22 +182,34 @@ class AlembicConfig(Config):
         else:
             self.print_stdout(" 成功", fg="green")
 
-    def add_version_path(self, *args: str | PathLike[str]) -> None:
-        version_path_separator = {
-            None: ", ",
-            "space": " ",
-            "os": os.pathsep,
-            ":": ":",
-            ";": ";",
-        }[self.get_main_option("version_path_separator", "os")]
-        self.set_main_option(
-            "version_locations",
-            version_path_separator.join(
-                map(str, (self.get_main_option("version_locations", ""), *args))
-            ),
+    def move_script(self, script: Script) -> Path:
+        script_path = Path(script.path)
+
+        try:
+            script_path = script_path.relative_to(self._temp_dir.name)
+        except ValueError:
+            return script_path
+
+        plugin_name = (script_path.parent.parts or ("",))[0]
+        if version_location := self._plugin_version_locations.get(plugin_name):
+            pass
+        elif version_location := self._plugin_version_locations.get(""):
+            plugin_name = ""
+        else:
+            self.print_stdout(
+                f'无法找到 {plugin_name or "<default>"} 对应的版本目录，忽略 "{script.path}"',
+                fg="yellow",
+            )
+            return script_path
+
+        (version_location / script_path.relative_to(plugin_name).parent).mkdir(
+            parents=True, exist_ok=True
+        )
+        return shutil.move(
+            script.path, version_location / script_path.relative_to(plugin_name)
         )
 
-    def add_post_write_hooks(self, name: str, **kwargs: str) -> None:
+    def _add_post_write_hook(self, name: str, **kwargs: str) -> None:
         self.set_section_option(
             "post_write_hooks",
             "hooks",
@@ -69,54 +218,18 @@ class AlembicConfig(Config):
         for key, value in kwargs.items():
             self.set_section_option("post_write_hooks", f"{name}.{key}", value)
 
+    def _init_post_write_hooks(self) -> None:
+        with suppress(DuplicateSectionError):
+            self.file_config.add_section("post_write_hooks")
 
-@click.group()
-@click.option(
-    "-c", "--config", type=click.Path(exists=True, dir_okay=False, path_type=Path)
-)
-@click.option("-n", "--name", default="alembic")
-@click.option("-x", multiple=True)
-@click.option("-q", "--quite", is_flag=True)
-@click.pass_context
-def orm(
-    ctx: click.Context,
-    config: str | PathLike[str] | AlembicConfig | None = None,
-    name: str = "alembic",
-    x: tuple[str, ...] = (),
-    quite: bool = False,
-) -> AlembicConfig:
-    from . import _metadatas
-    from . import config as plugin_config
+        if self.get_section_option("post_write_hooks", "hooks"):
+            return
 
-    config = config or plugin_config.alembic_config
-    if isinstance(config, AlembicConfig):
-        ctx.obj = config
-        return config
-
-    config = AlembicConfig(
-        config,
-        ini_section=name,
-        cmd_opts=Namespace(config=config, name=name, x=x, quite=quite),
-        config_args={
-            "script_location": plugin_config.alembic_script_location,
-            "prepend_sys_path": ".",
-            "revision_environment": "true",
-            "version_path_separator": "os",
-        },
-        attributes={"metadatas": _metadatas},
-    )
-
-    # post write hooks
-
-    with suppress(DuplicateSectionError):
-        config.file_config.add_section("post_write_hooks")
-
-    if config.get_section_option("post_write_hooks", "hooks") is None:
         with suppress(ImportError):
             import isort
 
             del isort
-            config.add_post_write_hooks(
+            self._add_post_write_hook(
                 "isort",
                 type="console_scripts",
                 entrypoint="isort",
@@ -127,63 +240,26 @@ def orm(
             import black
 
             del black
-            config.add_post_write_hooks(
+            self._add_post_write_hook(
                 "black",
                 type="console_scripts",
                 entrypoint="black",
                 options="REVISION_SCRIPT_FILENAME",
             )
 
-    # version locations
-
-    temp_version_locations = ctx.meta[f"{__name__}.temp_version_locations"] = Path(
-        ctx.with_resource(TemporaryDirectory())
-    )
-    version_locations_str = [temp_version_locations]
-
-    # original scripts, port with plugin
-    for plugin in get_loaded_plugins():
-        if plugin.metadata and (
-            version_location := plugin.metadata.extra.get("orm_version_location")
-        ):
-            with suppress(FileNotFoundError):
-                shutil.copytree(version_location, temp_version_locations / plugin.name)
-                version_locations_str.append(temp_version_locations / plugin.name)
-
-    # project scope replacement scripts
-    if version_locations := plugin_config.alembic_version_locations.get(""):
-        with suppress(FileNotFoundError):
-            shutil.copytree(
-                version_locations, temp_version_locations, dirs_exist_ok=True
-            )
-
-    # plugin specific replacement scripts
-    for (
-        plugin_name,
-        version_location,
-    ) in plugin_config.alembic_version_locations.items():
-        if not plugin_name:
-            continue
-        with suppress(FileNotFoundError):
-            shutil.copytree(
-                version_location,
-                temp_version_locations / plugin_name,
-                dirs_exist_ok=True,
-            )
-
-    config.add_version_path(*version_locations_str)
-
-    ctx.obj = config
-    return config
+    def _add_version_location(self, path: str | Path) -> None:
+        pathsep = _SPLIT_ON_PATH[self.get_main_option("version_path_separator")]
+        self.set_main_option(
+            "version_locations",
+            f"{self.get_main_option('version_locations', '')}{pathsep}{path}",
+        )
 
 
-@orm.command("list_templates")
-@click.pass_obj
 def list_templates(config: AlembicConfig) -> None:
-    """列出所有可用的模板。
+    """列出所有可用的模板.
 
     参数:
-        config: AlembicConfig 对象
+        config: `AlembicConfig` 对象
     """
 
     config.print_stdout("可用的模板：\n")
@@ -197,28 +273,19 @@ def list_templates(config: AlembicConfig) -> None:
     config.print_stdout("\n  nb orm init --template generic ./scripts")
 
 
-@orm.command()
-@click.argument(
-    "directory",
-    default=Path("migrations"),
-    type=click.Path(file_okay=False, writable=True, resolve_path=True, path_type=Path),
-)
-@click.option("-t", "--template", default="generic")
-@click.option("--package", is_flag=True)
-@click.pass_obj
 def init(
     config: AlembicConfig,
     directory: Path = Path("migrations"),
-    template: str = "generic",
+    template: str = "multidb",
     package: bool = False,
 ) -> None:
-    """初始化脚本目录。
+    """初始化脚本目录.
 
     参数:
-        config: AlembicConfig 对象
+        config: `AlembicConfig` 对象
         directory: 目标目录路径
         template: 使用的迁移环境模板
-        package: 为 True 时，在目标目录和 versions/ 中创建 `__init__.py` 文件
+        package: 为 True 时，在脚本目录和版本目录中创建 `__init__.py` 文件
     """
 
     if directory.exists() and next(directory.iterdir(), False):
@@ -237,20 +304,6 @@ def init(
         )
 
 
-@orm.command()
-@click.option("-m", "--message")
-@click.option("--sql", is_flag=True)
-@click.option("--head", default="head")
-@click.option("--splice", is_flag=True)
-@click.option("--branch-label")
-@click.option(
-    "--version-path",
-    default=None,
-    type=click.Path(file_okay=False, writable=True, resolve_path=True, path_type=Path),
-)
-@click.option("--rev-id")
-@click.option("--depends-on")
-@click.pass_obj
 def revision(
     config: AlembicConfig,
     message: str | None = None,
@@ -262,15 +315,29 @@ def revision(
     rev_id: str | None = None,
     depends_on: str | None = None,
     process_revision_directives: ProcessRevisionDirectiveFn | None = None,
-) -> Script | list[Script | None] | None:
+) -> Iterable[Script]:
+    """创建一个新修订文件.
+
+    参数:
+        config: `AlembicConfig` 对象
+        message: 修订的描述
+        sql: 是否以 SQL 的形式输出修订脚本
+        head: 修订的基准版本
+        splice: 是否将修订作为一个新的分支的头; 当 `head` 不是一个分支的头时, 此项必须为 `True`
+        branch_label: 修订的分支标签
+        version_path: 存放修订文件的目录
+        rev_id: 修订的 ID
+        depends_on: 修订的依赖
+        process_revision_directives: 修订的处理函数, 参见: `alembic.EnvironmentContext.configure.process_revision_directives`
+    """
     if version_path is not None:
         if version_path.exists() and next(version_path.iterdir(), False):
             raise click.BadParameter(
                 f'目录 "{version_path}" 已存在并且不为空', param_hint="--version-path"
             )
-        config.add_version_path(version_path)
+        config._add_version_location(version_path)
         config.print_stdout(
-            f'临时将目录 "{version_path}" 添加到版本目录中，请稍后将其添加到 VERSION_LOCATIONS 中',
+            f'临时将目录 "{version_path}" 添加到版本目录中，请稍后将其添加到 ALEMBIC_VERSION_LOCATIONS 中',
             fg="yellow",
         )
 
@@ -319,55 +386,14 @@ def revision(
     ):
         script_directory.run_env()
 
-    scripts = list(revision_context.generate_scripts())
-
-    if temp_version_locations := click.get_current_context().meta.get(
-        f"{__name__}.temp_version_locations"
-    ):
-        for script in filter(None, scripts):
-            move_revision_script(config, script, temp_version_locations)
-
-    return scripts[0] if len(scripts) == 1 else scripts
+    return filter(None, revision_context.generate_scripts())
 
 
-def move_revision_script(
-    config: AlembicConfig,
-    script: Script,
-    temp_version_locations: Path,
-) -> None:
-    from . import config as plugin_config
-
-    try:
-        script_path = Path(script.path).relative_to(temp_version_locations)
-    except ValueError:
-        return
-
-    plugin_name = (script_path.parent.parts or ("",))[0]
-    if version_location := plugin_config.alembic_version_locations.get(plugin_name):
-        (version_location / script_path.relative_to(plugin_name).parent).mkdir(
-            exist_ok=True
-        )
-        script.path = shutil.move(
-            script.path, version_location / script_path.relative_to(plugin_name)
-        )
-    elif version_location := plugin_config.alembic_version_locations.get(""):
-        (version_location / script_path.parent).mkdir(exist_ok=True)
-        script.path = shutil.move(script.path, version_location / script_path)
-    else:
-        config.print_stdout(
-            f'无法找到 {plugin_name} 对应的版本目录，忽略 "{script.path}"', fg="yellow"
-        )
-
-
-@orm.command()
-@click.pass_obj
 def check(config: AlembicConfig) -> None:
-    """Check if revision command with autogenerate has pending upgrade ops.
+    """检查数据库是否与模型定义一致.
 
-    :param config: a :class:`.Config` object.
-
-    .. versionadded:: 1.9.0
-
+    参数:
+        config: `AlembicConfig` 对象
     """
 
     script_directory = ScriptDirectory.from_config(config)
@@ -417,41 +443,25 @@ def check(config: AlembicConfig) -> None:
         config.print_stdout("没有检测到新的升级操作")
 
 
-@orm.command()
-@click.argument("revisions", nargs=-1)
-@click.option("-m", "--message")
-@click.option("--branch-label")
-@click.option("--rev-id")
-@click.pass_obj
 def merge(
     config: AlembicConfig,
     revisions: tuple[str, ...],
     message: str | None = None,
     branch_label: str | None = None,
     rev_id: str | None = None,
-) -> Script | None:
-    """Merge two revisions together.  Creates a new migration file.
+) -> Iterable[Script]:
+    """合并多个修订. 创建一个新的修订文件.
 
-    :param config: a :class:`.Config` instance
-
-    :param message: string message to apply to the revision
-
-    :param branch_label: string label name to apply to the new revision
-
-    :param rev_id: hardcoded revision identifier instead of generating a new
-     one.
-
-    .. seealso::
-
-        :ref:`branches`
-
+    参数:
+        config: `AlembicConfig` 对象
+        revisions: 要合并的修订
+        message: 修订的描述
+        branch_label: 修订的分支标签
+        rev_id: 修订的 ID
     """
 
     script_directory = ScriptDirectory.from_config(config)
-    template_args = {
-        "config": config  # Let templates use config for
-        # e.g. multiple databases
-    }
+    template_args = {"config": config}
 
     environment = asbool(config.get_main_option("revision_environment"))
 
@@ -473,37 +483,22 @@ def merge(
         branch_labels=branch_label,
         **template_args,  # type: ignore[arg-type]
     )
-    temp_version_locations = click.get_current_context().meta.get(
-        f"{__name__}.temp_version_locations"
-    )
-    if script and temp_version_locations:
-        move_revision_script(config, script, temp_version_locations)
-    return script
+    return (script,) if script else ()
 
 
-@orm.command()
-@click.argument("revision", required=False)
-@click.option("--sql", is_flag=True)
-@click.option("--tag")
-@click.pass_obj
 def upgrade(
     config: AlembicConfig,
     revision: str | None = None,
     sql: bool = False,
     tag: str | None = None,
 ) -> None:
-    """Upgrade to a later version.
+    """升级到较新版本.
 
-    :param config: a :class:`.Config` instance.
-
-    :param revision: string revision target or range for --sql mode
-
-    :param sql: if True, use ``--sql`` mode
-
-    :param tag: an arbitrary "tag" that can be intercepted by custom
-     ``env.py`` scripts via the :meth:`.EnvironmentContext.get_tag_argument`
-     method.
-
+    参数:
+        config: `AlembicConfig` 对象
+        revision: 目标修订
+        sql: 是否以 SQL 的形式输出修订脚本
+        tag: 一个任意的字符串, 可在自定义的 `env.py` 中通过 `alembic.EnvironmentContext.get_tag_argument` 获得
     """
 
     script = ScriptDirectory.from_config(config)
@@ -532,29 +527,19 @@ def upgrade(
         script.run_env()
 
 
-@orm.command()
-@click.argument("revision")
-@click.option("--sql", is_flag=True)
-@click.option("--tag")
-@click.pass_obj
 def downgrade(
     config: AlembicConfig,
     revision: str,
     sql: bool = False,
     tag: str | None = None,
 ) -> None:
-    """Revert to a previous version.
+    """回退到先前版本.
 
-    :param config: a :class:`.Config` instance.
-
-    :param revision: string revision target or range for --sql mode
-
-    :param sql: if True, use ``--sql`` mode
-
-    :param tag: an arbitrary "tag" that can be intercepted by custom
-     ``env.py`` scripts via the :meth:`.EnvironmentContext.get_tag_argument`
-     method.
-
+    参数:
+        config: `AlembicConfig` 对象
+        revision: 目标修订
+        sql: 是否以 SQL 的形式输出修订脚本
+        tag: 一个任意的字符串, 可在自定义的 `env.py` 中通过 `alembic.EnvironmentContext.get_tag_argument` 获得
     """
 
     script = ScriptDirectory.from_config(config)
@@ -583,16 +568,12 @@ def downgrade(
         script.run_env()
 
 
-@orm.command()
-@click.argument("rev", nargs=-1)
-@click.pass_obj
-def show(config, revs: str | Sequence[str] = "current"):
-    """Show the revision(s) denoted by the given symbol.
+def show(config: AlembicConfig, revs: str | Sequence[str] = "current") -> None:
+    """显示修订的信息.
 
-    :param config: a :class:`.Config` instance.
-
-    :param revision: string revision target
-
+    参数:
+        config: `AlembicConfig` 对象
+        revs: 目标修订范围
     """
 
     script = ScriptDirectory.from_config(config)
@@ -609,27 +590,19 @@ def show(config, revs: str | Sequence[str] = "current"):
         config.print_stdout(sc.log_entry)
 
 
-@orm.command()
-@click.option("-r", "--rev-range", required=False)
-@click.option("-v", "--verbose", is_flag=True)
-@click.option("-i", "--indicate-current", is_flag=True)
-@click.pass_obj
 def history(
     config: AlembicConfig,
     rev_range: str | None = None,
     verbose: bool = False,
     indicate_current: bool = False,
 ) -> None:
-    """List changeset scripts in chronological order.
+    """显示修订的历史.
 
-    :param config: a :class:`.Config` instance.
-
-    :param rev_range: string revision range
-
-    :param verbose: output in verbose mode.
-
-    :param indicate_current: indicate current revision.
-
+    参数:
+        config: `AlembicConfig` 对象
+        rev_range: 修订范围
+        verbose: 是否显示详细信息
+        indicate_current: 指示出当前修订
     """
 
     script = ScriptDirectory.from_config(config)
@@ -684,19 +657,15 @@ def history(
         _display_history(config, script, base, head)
 
 
-@orm.command()
-@click.option("-v", "--verbose", is_flag=True)
-@click.option("--resolve-dependencies", is_flag=True)
-@click.pass_obj
-def heads(config, verbose: bool = False, resolve_dependencies: bool = False):
-    """Show current available heads in the script directory.
+def heads(
+    config: AlembicConfig, verbose: bool = False, resolve_dependencies: bool = False
+) -> None:
+    """显示所有的分支头.
 
-    :param config: a :class:`.Config` instance.
-
-    :param verbose: output in verbose mode.
-
-    :param resolve_dependencies: treat dependency version as down revisions.
-
+    参数:
+        config: `AlembicConfig` 对象
+        verbose: 是否显示详细信息
+        resolve_dependencies: 是否将依赖的修订视作父修订
     """
 
     script = ScriptDirectory.from_config(config)
@@ -711,18 +680,13 @@ def heads(config, verbose: bool = False, resolve_dependencies: bool = False):
         )
 
 
-@orm.command()
-@click.option("-v", "--verbose", is_flag=True)
-@click.pass_obj
-def branches(config, verbose=False):
-    """Show current branch points.
+def branches(config: AlembicConfig, verbose: bool = False) -> None:
+    """显示所有的分支.
 
-    :param config: a :class:`.Config` instance.
-
-    :param verbose: output in verbose mode.
-
+    参数:
+        config: `AlembicConfig` 对象
+        verbose: 是否显示详细信息
     """
-
     script = ScriptDirectory.from_config(config)
     for sc in script.walk_revisions():
         if not sc.is_branch_point:
@@ -744,16 +708,12 @@ def branches(config, verbose=False):
         )
 
 
-@orm.command()
-@click.option("-v", "--verbose", is_flag=True)
-@click.pass_obj
 def current(config: AlembicConfig, verbose: bool = False) -> None:
-    """Display the current revision for a database.
+    """显示当前的修订.
 
-    :param config: a :class:`.Config` instance.
-
-    :param verbose: output in verbose mode.
-
+    参数:
+        config: `AlembicConfig` 对象
+        verbose: 是否显示详细信息
     """
 
     script = ScriptDirectory.from_config(config)
@@ -773,12 +733,6 @@ def current(config: AlembicConfig, verbose: bool = False) -> None:
         script.run_env()
 
 
-@orm.command()
-@click.argument("revisions", nargs=-1)
-@click.option("--sql", is_flag=True)
-@click.option("--tag")
-@click.option("--purge", is_flag=True)
-@click.pass_obj
 def stamp(
     config: AlembicConfig,
     revisions: tuple[str, ...] = ("heads",),
@@ -786,25 +740,14 @@ def stamp(
     tag: str | None = None,
     purge: bool = False,
 ) -> None:
-    """'stamp' the revision table with the given revision; don't
-    run any migrations.
+    """将数据库标记为特定的修订版本, 不运行任何迁移.
 
-    :param config: a :class:`.Config` instance.
-
-    :param revision: target revision or list of revisions.   May be a list
-     to indicate stamping of multiple branch heads.
-
-     .. note:: this parameter is called "revisions" in the command line
-        interface.
-
-    :param sql: use ``--sql`` mode
-
-    :param tag: an arbitrary "tag" that can be intercepted by custom
-     ``env.py`` scripts via the :class:`.EnvironmentContext.get_tag_argument`
-     method.
-
-    :param purge: delete all entries in the version table before stamping.
-
+    参数:
+        config: `AlembicConfig` 对象
+        revisions: 目标修订
+        sql: 是否以 SQL 的形式输出修订脚本
+        tag: 一个任意的字符串, 可在自定义的 `env.py` 中通过 `alembic.EnvironmentContext.get_tag_argument` 获得
+        purge: 是否在标记前清空数据库版本表
     """
 
     revisions = revisions or ("heads",)
@@ -844,16 +787,12 @@ def stamp(
         script.run_env()
 
 
-@orm.command()
-@click.argument("rev", default="current")
-@click.pass_obj
 def edit(config: AlembicConfig, rev: str = "current") -> None:
-    """Edit revision script(s) using $EDITOR.
+    """使用 `$EDITOR` 编辑修订文件.
 
-    :param config: a :class:`.Config` instance.
-
-    :param rev: target revision.
-
+    参数:
+        config: `AlembicConfig` 对象
+        rev: 目标修订
     """
 
     script = ScriptDirectory.from_config(config)
@@ -868,40 +807,30 @@ def edit(config: AlembicConfig, rev: str = "current") -> None:
                 raise click.UsageError("当前没有修订")
 
             for sc in cast("tuple[Script]", script.get_revisions(rev)):
-                if temp_version_locations:
-                    move_revision_script(config, sc, temp_version_locations)
-
-                open_in_editor(sc.path)
+                script_path = config.move_script(sc)
+                open_in_editor(str(script_path))
 
             return ()
 
         with EnvironmentContext(config, script, fn=edit_current):
             script.run_env()
     else:
-        revs = script.get_revisions(rev)
+        revs = cast(tuple[Script, ...], script.get_revisions(rev))
+
         if not revs:
             raise click.BadParameter(f'没有 "{rev}" 指示的修订文件')
-        for sc in revs:
-            assert sc
 
-            if temp_version_locations:
-                move_revision_script(config, sc, temp_version_locations)
-
-            open_in_editor(sc.path)
+        for sc in cast(tuple[Script], revs):
+            script_path = config.move_script(sc)
+            open_in_editor(str(script_path))
 
 
-@orm.command("ensure_version")
-@click.option("--sql", is_flag=True)
-@click.pass_obj
-def ensure_version(config: Config, sql: bool = False) -> None:
-    """Create the alembic version table if it doesn't exist already .
+def ensure_version(config: AlembicConfig, sql: bool = False) -> None:
+    """创建版本表.
 
-    :param config: a :class:`.Config` instance.
-
-    :param sql: use ``--sql`` mode
-
-     .. versionadded:: 1.7.6
-
+    参数:
+        config: `AlembicConfig` 对象
+        sql: 是否以 SQL 的形式输出修订脚本
     """
 
     script = ScriptDirectory.from_config(config)
@@ -917,10 +846,3 @@ def ensure_version(config: Config, sql: bool = False) -> None:
         as_sql=sql,
     ):
         script.run_env()
-
-
-def main() -> None:
-    from . import _init_orm
-
-    _init_orm()
-    orm(prog_name="nb orm")

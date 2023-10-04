@@ -1,9 +1,19 @@
 from __future__ import annotations
 
 import sys
+import json
 from typing import TypeVar
+from contextlib import suppress
+from functools import lru_cache
+from importlib.metadata import Distribution, PackageNotFoundError, distribution
 
+from nonebot.plugin import Plugin
 from nonebot.params import Depends
+
+if sys.version_info >= (3, 10):
+    from importlib.metadata import packages_distributions
+else:
+    from importlib_metadata import packages_distributions
 
 _T = TypeVar("_T")
 
@@ -19,9 +29,49 @@ class _ReturnEq:
 return_eq = _ReturnEq()
 
 
+_packages_distributions = lru_cache(None)(packages_distributions)
+
+
+# https://github.com/pdm-project/pdm/blob/fee1e6bffd7de30315e2134e19f9a6f58e15867c/src/pdm/utils.py#L361-L374
+def is_editable(plugin: Plugin) -> bool:
+    """Check if the distribution is installed in editable mode"""
+
+    while plugin.parent_plugin:
+        plugin = plugin.parent_plugin
+
+    dist: Distribution | None = None
+
+    if plugin.metadata:
+        with suppress(PackageNotFoundError):
+            dist = distribution(plugin.metadata.name)
+
+    if not dist:
+        with suppress(KeyError, IndexError):
+            dist = distribution(
+                _packages_distributions()[plugin.module_name.split(".")[0]][0]
+            )
+
+    if not dist:
+        return "site-packages" in plugin.module.__path__[0]
+
+    # https://github.com/pdm-project/pdm/blob/fee1e6bffd7de30315e2134e19f9a6f58e15867c/src/pdm/utils.py#L361-L374
+    if getattr(dist, "link_file", None) is not None:
+        return True
+
+    direct_url = dist.read_text("direct_url.json")
+
+    if not direct_url:
+        return False
+
+    direct_url_data = json.loads(direct_url)
+
+    return direct_url_data.get("dir_info", {}).get("editable", False)
+
+
 if sys.version_info >= (3, 10):
     from inspect import get_annotations as get_annotations  # nopycln: import
 else:
+    #  https://github.com/python/cpython/blob/63a7f7765c6e9c1c9b93b7692e828ecf7bbd3bb9/Lib/inspect.py#L66-L178
     import types
     import functools
 
