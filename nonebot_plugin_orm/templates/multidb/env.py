@@ -17,16 +17,14 @@ from nonebot_plugin_orm import config as plugin_config
 
 # 是否使用二阶段提交 (Two-Phase Commit)，
 # 当同时迁移多个数据库时，可以启用以保证迁移的原子性。
+# 注意：只有部分数据库支持（例如 SQLite 就不支持）。
 USE_TWOPHASE = False
 
 # Alembic Config 对象，它提供正在使用的 .ini 文件中的值。
 config = cast(AlembicConfig, context.config)
 
-# gather section names referring to different
-# databases.  These are named "engine1", "engine2"
-# in the sample .ini file.
+# bind key 到 AsyncEngine 的映射
 engines: dict[str, AsyncEngine] = config.attributes["engines"]
-
 
 # bind key 到 MetaData 的映射，用于 'autogenerate' 支持。
 # Metadata 对象必须仅包含对应数据库中的表。

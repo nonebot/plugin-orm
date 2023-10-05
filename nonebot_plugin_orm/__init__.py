@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from typing import Any
-from functools import partial
-from collections import defaultdict
+from functools import wraps, partial
 from contextlib import AsyncExitStack
+from typing_extensions import assert_never
 
 from nonebot import logger, get_driver
 from nonebot.plugin import PluginMetadata
@@ -74,9 +74,10 @@ __plugin_meta__ = PluginMetadata(
 _binds: dict[type[Model], AsyncEngine] = None  # type:ignore
 _engines: dict[str, AsyncEngine] = None  # type: ignore
 _metadatas: dict[str, MetaData] = None  # type: ignore
-_session_factory: async_sessionmaker = None  # type: ignore
+_session_factory: async_sessionmaker[AsyncSession] = None  # type: ignore
 
 
+@get_driver().on_startup
 async def init_orm():
     global _session_factory
 
@@ -90,7 +91,7 @@ async def init_orm():
         if config.alembic_startup_check:
             await greenlet_spawn(migrate.check, alembic_config)
         else:
-            logger.warning("跳过 ORM 启动检查，直接创建所有表并标记数据库为最新修订版本")
+            logger.warning("跳过 nonebot-plugin-orm 启动检查，直接创建所有表并标记数据库为最新修订版本")
 
             async with AsyncExitStack() as stack:
                 for name, engine in _engines.items():
@@ -100,7 +101,16 @@ async def init_orm():
                 await greenlet_spawn(migrate.stamp, alembic_config)
 
 
+@wraps(lambda: None)  # NOTE: for dependency injection
+def get_session(**local_kw: Any) -> AsyncSession:
+    if _session_factory is None:
+        raise RuntimeError("nonebot-plugin-orm 未初始化")
+    return _session_factory(**local_kw)
+
+
 def get_scoped_session() -> async_scoped_session[AsyncSession]:
+    if _session_factory is None:
+        raise RuntimeError("nonebot-plugin-orm 未初始化")
     return async_scoped_session(
         _session_factory, scopefunc=partial(current_matcher.get, None)
     )
@@ -125,14 +135,18 @@ def _create_engine(engine: str | URL | dict[str, Any] | AsyncEngine) -> AsyncEng
 
 
 def _init_engines():
-    global _engines
+    global _engines, _metadatas
 
-    _engines = {
-        name: _create_engine(engine) for name, engine in config.sqlalchemy_binds.items()
-    }
+    _engines = {}
+    _metadatas = {}
+    for name, engine in config.sqlalchemy_binds.items():
+        _engines[name] = _create_engine(engine)
+        _metadatas[name] = MetaData()
 
     if config.sqlalchemy_database_url:
         _engines[""] = _create_engine(config.sqlalchemy_database_url)
+
+    if "" in _engines:
         return
 
     try:
@@ -142,12 +156,13 @@ def _init_engines():
         del aiosqlite
     except ImportError:
         raise ValueError(
-            "必须指定一个默认数据库引擎 (SQLALCHEMY_DATABASE_URL 或 SQLALCHEMY_BINDS[''])"
+            '必须指定一个默认数据库引擎 (SQLALCHEMY_DATABASE_URL 或 SQLALCHEMY_BINDS[""])'
         ) from None
 
     _engines[""] = create_async_engine(
         f"sqlite+aiosqlite:///{get_data_file(__plugin_meta__.name, 'db.sqlite3')}"
     )
+    _metadatas[""] = MetaData()
 
 
 def _init_table():
@@ -159,8 +174,6 @@ def _init_table():
         _metadatas = {"": Model.metadata}
         return
 
-    _metadatas = defaultdict(MetaData)
-
     for model in Model.__subclasses__():
         table: Table | None = getattr(model, "__table__", None)
 
@@ -169,8 +182,6 @@ def _init_table():
 
         _binds[model] = _engines.get(bind_key, _engines[""])
         table.to_metadata(_metadatas.get(bind_key, _metadatas[""]))
-
-    _metadatas = dict(_metadatas)
 
 
 from .sql import *

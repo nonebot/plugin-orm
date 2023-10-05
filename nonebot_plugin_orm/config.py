@@ -31,7 +31,4 @@ class Config(BaseModel, arbitrary_types_allowed=True):
     alembic_startup_check: bool = True
 
 
-_driver = get_driver()
-
-global_config = _driver.config
-config = Config.parse_obj(global_config)
+config = Config.parse_obj(get_driver().config)

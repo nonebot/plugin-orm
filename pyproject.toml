@@ -14,7 +14,7 @@ dependencies = [
     "sqlalchemy~=2.0",
     "typing-extensions~=4.4; python_version < '3.12'",
 ]
-requires-python = ">=3.9"
+requires-python = ">=3.9,<4.0"
 readme = "README.md"
 license = { text = "MIT" }
 keywords = ["nonebot", "orm", "sqlalchemy"]

@@ -139,15 +139,13 @@ class AlembicConfig(Config):
             ):
                 continue
 
-            with as_file(files(version_module)) as version_location:
-                if is_editable(plugin):
-                    self._add_version_location(version_location)
-                else:
-                    # NOTE: read-only, copy to temp dir
-                    self._add_version_location(temp_version_locations / plugin.name)
-                    shutil.copytree(
-                        version_location, temp_version_locations / plugin.name
-                    )
+            version_location = version_module.__path__[0]
+            if is_editable(plugin):
+                self._add_version_location(version_location)
+            else:
+                # NOTE: read-only, copy to temp dir
+                self._add_version_location(temp_version_locations / plugin.name)
+                shutil.copytree(version_location, temp_version_locations / plugin.name)
 
         for plugin_name, version_location in self._plugin_version_locations.items():
             with suppress(FileNotFoundError):
