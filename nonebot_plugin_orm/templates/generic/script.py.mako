@@ -5,6 +5,8 @@
 创建时间: ${create_date}
 
 """
+from __future__ import annotations
+
 from collections.abc import Sequence
 
 from alembic import op

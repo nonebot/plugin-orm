@@ -71,10 +71,10 @@ __plugin_meta__ = PluginMetadata(
 )
 
 
-_binds: dict[type[Model], AsyncEngine] = None  # type:ignore
-_engines: dict[str, AsyncEngine] = None  # type: ignore
-_metadatas: dict[str, MetaData] = None  # type: ignore
-_session_factory: async_sessionmaker[AsyncSession] = None  # type: ignore
+_binds: dict[type[Model], AsyncEngine]
+_engines: dict[str, AsyncEngine]
+_metadatas: dict[str, MetaData]
+_session_factory: async_sessionmaker[AsyncSession]
 
 
 @get_driver().on_startup

@@ -1,0 +1,50 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - v*
+
+permissions:
+  id-token: write
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Setup Python
+        uses: ./.github/actions/setup-python
+
+      - name: Get version
+        id: version
+        run: |
+          echo "VERSION=$(pdm show --version)" >> $GITHUB_OUTPUT
+          echo "TAG_VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+          echo "TAG_NAME=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+      - name: Check version
+        if: steps.version.outputs.VERSION != steps.version.outputs.TAG_VERSION
+        run: exit 1
+
+      - name: Build package
+        run: pdm build
+
+      - name: Upload dist
+        uses: actions/upload-artifact@v3
+        with:
+          name: dist
+          path: dist/*
+
+      - name: Publish package to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+
+      - name: Publish package to GitHub
+        run: |
+          gh release create ${{ steps.version.outputs.TAG_NAME }} dist/* \
+          -t "🔖 Release ${{ steps.version.outputs.VERSION }}" --generate-notes
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
