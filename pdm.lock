@@ -2,11 +2,24 @@
 # It is not intended for manual editing.
 
 [metadata]
-groups = ["default", "dev"]
+groups = ["default", "default", "dev", "mysql", "postgresql", "sqlite"]
 cross_platform = true
 static_urls = false
 lock_version = "4.3"
-content_hash = "sha256:dc5f56e36ea755c588fb308c2b4fb8bcd78caa9470af550ec618c985dd512e7a"
+content_hash = "sha256:6a0d818cf1a28cb45b0baeea257ff0fef2c065aee0d083ecf9eb6667f49eb01c"
+
+[[package]]
+name = "aiomysql"
+version = "0.2.0"
+requires_python = ">=3.7"
+summary = "MySQL driver for asyncio."
+dependencies = [
+    "PyMySQL>=1.0",
+]
+files = [
+    {file = "aiomysql-0.2.0-py3-none-any.whl", hash = "sha256:b7c26da0daf23a5ec5e0b133c03d20657276e4eae9b73e040b72787f6f6ade0a"},
+    {file = "aiomysql-0.2.0.tar.gz", hash = "sha256:558b9c26d580d08b8c5fd1be23c5231ce3aeff2dadad989540fee740253deb67"},
+]
 
 [[package]]
 name = "aiosqlite"
@@ -213,8 +226,8 @@ files = [
 
 [[package]]
 name = "libcst"
-version = "1.0.1"
-requires_python = ">=3.7"
+version = "1.1.0"
+requires_python = ">=3.8"
 summary = "A concrete syntax tree with AST-like properties for Python 3.5, 3.6, 3.7, 3.8, 3.9, and 3.10 programs."
 dependencies = [
     "pyyaml>=5.2",
@@ -222,25 +235,31 @@ dependencies = [
     "typing-inspect>=0.4.0",
 ]
 files = [
-    {file = "libcst-1.0.1-cp310-cp310-macosx_10_9_x86_64.whl", hash = "sha256:80423311f09fc5fc3270ede44d30d9d8d3c2d3dd50dbf703a581ca7346949fa6"},
-    {file = "libcst-1.0.1-cp310-cp310-macosx_11_0_arm64.whl", hash = "sha256:9d6dec2a3c443792e6af7c36fadc256e4ea586214c76b52f0d18118811dbe351"},
-    {file = "libcst-1.0.1-cp310-cp310-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:4840a3de701778f0a19582bb3085c61591329153f801dc25da84689a3733960b"},
-    {file = "libcst-1.0.1-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:0138068baf09561268c7f079373bda45f0e2b606d2d19df1307ca8a5134fc465"},
-    {file = "libcst-1.0.1-cp310-cp310-manylinux_2_5_i686.manylinux1_i686.manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:9a4931feceab171e6fce73de94e13880424367247dad6ff2b49cabfec733e144"},
-    {file = "libcst-1.0.1-cp310-cp310-win_amd64.whl", hash = "sha256:47dba43855e9c7b06d8b256ee81f0ebec6a4f43605456519577e09dfe4b4288c"},
-    {file = "libcst-1.0.1-cp311-cp311-macosx_10_9_x86_64.whl", hash = "sha256:8c50541c3fd6b1d5a3765c4bb5ee8ecbba9d0e798e48f79fd5adf3b6752de4d0"},
-    {file = "libcst-1.0.1-cp311-cp311-macosx_11_0_arm64.whl", hash = "sha256:5599166d5fec40e18601fb8868519dde99f77b6e4ad6074958018f9545da7abd"},
-    {file = "libcst-1.0.1-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:600c4d3a9a2f75d5a055fed713a5a4d812709947909610aa6527abe08a31896f"},
-    {file = "libcst-1.0.1-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:a6b5aea04c35e13109edad3cf83bc6dcd74309b150a781d2189eecb288b73a87"},
-    {file = "libcst-1.0.1-cp311-cp311-manylinux_2_5_i686.manylinux1_i686.manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:ddd4e0eeec499d1c824ab545e62e957dbbd69a16bc4273208817638eb7d6b3c6"},
-    {file = "libcst-1.0.1-cp311-cp311-win_amd64.whl", hash = "sha256:414350df5e334ddf0db1732d63da44e81b734d45abe1c597b5e5c0dd46aa4156"},
-    {file = "libcst-1.0.1-cp39-cp39-macosx_10_9_x86_64.whl", hash = "sha256:119ba709f1dcb785a4458cf36cedb51d6f9cb2eec0acd7bb171f730eac7cb6ce"},
-    {file = "libcst-1.0.1-cp39-cp39-macosx_11_0_arm64.whl", hash = "sha256:4b4e336f6d68456017671cdda8ddebf9caebce8052cc21a3f494b03d7bd28386"},
-    {file = "libcst-1.0.1-cp39-cp39-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:8420926791b0b6206cb831a7ec73d26ae820e65bdf07ce9813c7754c7722c07a"},
-    {file = "libcst-1.0.1-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:d237e9164a43caa7d6765ee560412264484e7620c546a2ee10a8d01bd56884e0"},
-    {file = "libcst-1.0.1-cp39-cp39-manylinux_2_5_i686.manylinux1_i686.manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:440887e5f82efb299f2e98d4bfa5663851a878cfc0efed652ab8c50205191436"},
-    {file = "libcst-1.0.1-cp39-cp39-win_amd64.whl", hash = "sha256:ae7f4e71d714f256b5f2ff98b5a9effba0f9dff4d779d8f35d7eb157bef78f59"},
-    {file = "libcst-1.0.1.tar.gz", hash = "sha256:37187337f979ba426d8bfefc08008c3c1b09b9e9f9387050804ed2da88107570"},
+    {file = "libcst-1.1.0-cp310-cp310-macosx_10_9_x86_64.whl", hash = "sha256:63f75656fd733dc20354c46253fde3cf155613e37643c3eaf6f8818e95b7a3d1"},
+    {file = "libcst-1.1.0-cp310-cp310-macosx_11_0_arm64.whl", hash = "sha256:8ae11eb1ea55a16dc0cdc61b41b29ac347da70fec14cc4381248e141ee2fbe6c"},
+    {file = "libcst-1.1.0-cp310-cp310-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:4bc745d0c06420fe2644c28d6ddccea9474fb68a2135904043676deb4fa1e6bc"},
+    {file = "libcst-1.1.0-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:8c1f2da45f1c45634090fd8672c15e0159fdc46853336686959b2d093b6e10fa"},
+    {file = "libcst-1.1.0-cp310-cp310-manylinux_2_5_i686.manylinux1_i686.manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:003e5e83a12eed23542c4ea20fdc8de830887cc03662432bb36f84f8c4841b81"},
+    {file = "libcst-1.1.0-cp310-cp310-win_amd64.whl", hash = "sha256:3ebbb9732ae3cc4ae7a0e97890bed0a57c11d6df28790c2b9c869f7da653c7c7"},
+    {file = "libcst-1.1.0-cp311-cp311-macosx_10_9_x86_64.whl", hash = "sha256:d68c34e3038d3d1d6324eb47744cbf13f2c65e1214cf49db6ff2a6603c1cd838"},
+    {file = "libcst-1.1.0-cp311-cp311-macosx_11_0_arm64.whl", hash = "sha256:9dffa1795c2804d183efb01c0f1efd20a7831db6a21a0311edf90b4100d67436"},
+    {file = "libcst-1.1.0-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:cc9b6ac36d7ec9db2f053014ea488086ca2ed9c322be104fbe2c71ca759da4bb"},
+    {file = "libcst-1.1.0-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:78b7a38ec4c1c009ac39027d51558b52851fb9234669ba5ba62283185963a31c"},
+    {file = "libcst-1.1.0-cp311-cp311-manylinux_2_5_i686.manylinux1_i686.manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:5297a16e575be8173185e936b7765c89a3ca69d4ae217a4af161814a0f9745a7"},
+    {file = "libcst-1.1.0-cp311-cp311-win_amd64.whl", hash = "sha256:7ccaf53925f81118aeaadb068a911fac8abaff608817d7343da280616a5ca9c1"},
+    {file = "libcst-1.1.0-cp312-cp312-macosx_10_9_x86_64.whl", hash = "sha256:75816647736f7e09c6120bdbf408456f99b248d6272277eed9a58cf50fb8bc7d"},
+    {file = "libcst-1.1.0-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:c8f26250f87ca849a7303ed7a4fd6b2c7ac4dec16b7d7e68ca6a476d7c9bfcdb"},
+    {file = "libcst-1.1.0-cp312-cp312-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:2d37326bd6f379c64190a28947a586b949de3a76be00176b0732c8ee87d67ebe"},
+    {file = "libcst-1.1.0-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:e3d8cf974cfa2487b28f23f56c4bff90d550ef16505e58b0dca0493d5293784b"},
+    {file = "libcst-1.1.0-cp312-cp312-manylinux_2_5_i686.manylinux1_i686.manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:82d1271403509b0a4ee6ff7917c2d33b5a015f44d1e208abb1da06ba93b2a378"},
+    {file = "libcst-1.1.0-cp312-cp312-win_amd64.whl", hash = "sha256:bca1841693941fdd18371824bb19a9702d5784cd347cb8231317dbdc7062c5bc"},
+    {file = "libcst-1.1.0-cp39-cp39-macosx_10_9_x86_64.whl", hash = "sha256:73c086705ed34dbad16c62c9adca4249a556c1b022993d511da70ea85feaf669"},
+    {file = "libcst-1.1.0-cp39-cp39-macosx_11_0_arm64.whl", hash = "sha256:3a07ecfabbbb8b93209f952a365549e65e658831e9231649f4f4e4263cad24b1"},
+    {file = "libcst-1.1.0-cp39-cp39-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:c653d9121d6572d8b7f8abf20f88b0a41aab77ff5a6a36e5a0ec0f19af0072e8"},
+    {file = "libcst-1.1.0-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:5f1cd308a4c2f71d5e4eec6ee693819933a03b78edb2e4cc5e3ad1afd5fb3f07"},
+    {file = "libcst-1.1.0-cp39-cp39-manylinux_2_5_i686.manylinux1_i686.manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:8afb6101b8b3c86c5f9cec6b90ab4da16c3c236fe7396f88e8b93542bb341f7c"},
+    {file = "libcst-1.1.0-cp39-cp39-win_amd64.whl", hash = "sha256:d22d1abfe49aa60fc61fa867e10875a9b3024ba5a801112f4d7ba42d8d53242e"},
+    {file = "libcst-1.1.0.tar.gz", hash = "sha256:0acbacb9a170455701845b7e940e2d7b9519db35a86768d86330a0b0deae1086"},
 ]
 
 [[package]]
@@ -397,6 +416,20 @@ files = [
 ]
 
 [[package]]
+name = "nonebot-plugin-localstore"
+version = "0.5.1"
+requires_python = ">=3.8,<4.0"
+summary = "Local Storage Support for NoneBot2"
+dependencies = [
+    "nonebot2<3.0.0,>=2.0.0",
+    "typing-extensions>=4.0.0",
+]
+files = [
+    {file = "nonebot_plugin_localstore-0.5.1-py3-none-any.whl", hash = "sha256:520c4dd42f00495ec8fc458c40c5877bc604556f58147c34c4051860df34575b"},
+    {file = "nonebot_plugin_localstore-0.5.1.tar.gz", hash = "sha256:97491d213d419de3f76f941a8d80ab190aa9828950289ec83402028e0f0892eb"},
+]
+
+[[package]]
 name = "nonebot2"
 version = "2.1.1"
 requires_python = ">=3.8,<4.0"
@@ -501,6 +534,87 @@ files = [
 ]
 
 [[package]]
+name = "psycopg"
+version = "3.1.12"
+requires_python = ">=3.7"
+summary = "PostgreSQL database adapter for Python"
+dependencies = [
+    "typing-extensions>=4.1",
+    "tzdata; sys_platform == \"win32\"",
+]
+files = [
+    {file = "psycopg-3.1.12-py3-none-any.whl", hash = "sha256:8ec5230d6a7eb654b4fb3cf2d3eda8871d68f24807b934790504467f1deee9f8"},
+    {file = "psycopg-3.1.12.tar.gz", hash = "sha256:cec7ad2bc6a8510e56c45746c631cf9394148bdc8a9a11fd8cf8554ce129ae78"},
+]
+
+[[package]]
+name = "psycopg-binary"
+version = "3.1.12"
+requires_python = ">=3.7"
+summary = "PostgreSQL database adapter for Python -- C optimisation distribution"
+files = [
+    {file = "psycopg_binary-3.1.12-cp310-cp310-macosx_10_9_x86_64.whl", hash = "sha256:29a69f62aae8617361376d9ed1e34966ae9c3a74c4ab3aa430a7ce0c11530862"},
+    {file = "psycopg_binary-3.1.12-cp310-cp310-macosx_11_0_arm64.whl", hash = "sha256:7308316fdb6796399041b80db0ab9f356504ed26427e46834ade82ba94b067ce"},
+    {file = "psycopg_binary-3.1.12-cp310-cp310-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:130752b9b2f8d071f179e257b9698cedfe4546be81ad5ecd8ed52cf9d725580d"},
+    {file = "psycopg_binary-3.1.12-cp310-cp310-manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:45bcecc96a6e6fe11e06b75f7ba8005d6f717f16fae7ab1cf5a0aec5191f87c3"},
+    {file = "psycopg_binary-3.1.12-cp310-cp310-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl", hash = "sha256:bc3f0fcc4fcccffda2450c725bee9fad73bc6c110cfbe3b8a777063845d9c6b9"},
+    {file = "psycopg_binary-3.1.12-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:f93749f0fe69cfbfec22af690bb4b241f1a4347c57be26fe2e5b70588f7d602f"},
+    {file = "psycopg_binary-3.1.12-cp310-cp310-musllinux_1_1_aarch64.whl", hash = "sha256:36147f708cc6a9d74c2b8d880f8dd3a6d53364b5c487536adaa022d435c90733"},
+    {file = "psycopg_binary-3.1.12-cp310-cp310-musllinux_1_1_i686.whl", hash = "sha256:2bbcc6fbabc2b92d18d955d9fa104fd9d8bd2dcb97a279c4e788c6b714ffd1af"},
+    {file = "psycopg_binary-3.1.12-cp310-cp310-musllinux_1_1_ppc64le.whl", hash = "sha256:0dee8a1ecc501d9c3db06d08184712459bbb5806a09121c3a25e8cbe91e234d7"},
+    {file = "psycopg_binary-3.1.12-cp310-cp310-musllinux_1_1_x86_64.whl", hash = "sha256:49d6acf228edb5bd9000735b89b780b18face776d081b905cf68e149d57dfcc1"},
+    {file = "psycopg_binary-3.1.12-cp310-cp310-win_amd64.whl", hash = "sha256:ee65335781a54f29f4abc28060a6188c41bdd42fdc3cbc1dd84695ed8ef18321"},
+    {file = "psycopg_binary-3.1.12-cp311-cp311-macosx_10_9_x86_64.whl", hash = "sha256:d401722aa38bda64d1ba8293f6dad99f6f684711e2c016a93f138f2bbcff2a4b"},
+    {file = "psycopg_binary-3.1.12-cp311-cp311-macosx_11_0_arm64.whl", hash = "sha256:46eac158e8e794d9414a8fe7706beeee9b1ecc4accbea914314825ace8137105"},
+    {file = "psycopg_binary-3.1.12-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:3f017400679aa38f6cb22b888b8ec198a5b100ec2132e6b3bcfa797b14b5b438"},
+    {file = "psycopg_binary-3.1.12-cp311-cp311-manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:d176c4614f5208ab9938d5426d61627c8fbc7f8dab53fef42c8bf2ab8605aa51"},
+    {file = "psycopg_binary-3.1.12-cp311-cp311-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl", hash = "sha256:c48c4f3fcfd9e75e3fdb18eea320de591e06059a859280ec26ce8d753299353d"},
+    {file = "psycopg_binary-3.1.12-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:98fce28d8136bdd883f20d26467bf259b5fb559eb64d8f83695690714cdfdad3"},
+    {file = "psycopg_binary-3.1.12-cp311-cp311-musllinux_1_1_aarch64.whl", hash = "sha256:e4a0f44bc29fc1b56ee1c865796cbe354078ee1e985f898e4915db185055bf7d"},
+    {file = "psycopg_binary-3.1.12-cp311-cp311-musllinux_1_1_i686.whl", hash = "sha256:6def4f238ca02d6b42336b405d02729c081c978cda9b6ba7549a9c63a91ba823"},
+    {file = "psycopg_binary-3.1.12-cp311-cp311-musllinux_1_1_ppc64le.whl", hash = "sha256:000838cb5ab7851116b462e58893a96b0f1e35864135a6283f3242a730ec45d3"},
+    {file = "psycopg_binary-3.1.12-cp311-cp311-musllinux_1_1_x86_64.whl", hash = "sha256:e7949e1aefe339f04dbecac6aa036c9cd137a58f966c4b96ab933823c340ee12"},
+    {file = "psycopg_binary-3.1.12-cp311-cp311-win_amd64.whl", hash = "sha256:b32922872460575083487de41e17e8cf308c3550da02c704efe42960bc6c19de"},
+    {file = "psycopg_binary-3.1.12-cp312-cp312-macosx_10_9_x86_64.whl", hash = "sha256:70054ada2f890d004dc3d5ff908e34aecb085fd599d40db2975c09a39c50dfc3"},
+    {file = "psycopg_binary-3.1.12-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:7544d6d74f5b5f9daafe8a4ed7d266787d62a2bf16f5120c45d42d1f4a856bc8"},
+    {file = "psycopg_binary-3.1.12-cp312-cp312-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:43197161099cb4e36a9ca44c10657908b619d7263ffcff30932ad4627430dc3c"},
+    {file = "psycopg_binary-3.1.12-cp312-cp312-manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:68398cdf3aedd4042b1126b9aba34615f1ab592831483282f19f0159fce5ca75"},
+    {file = "psycopg_binary-3.1.12-cp312-cp312-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl", hash = "sha256:77ae6cda3ffee2425aca9ea7af57296d0c701e2ac5897b48b95dfee050234592"},
+    {file = "psycopg_binary-3.1.12-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:278e8888e90fb6ebd7eae8ccb85199eafd712b734e641e0d40f2a903e946102d"},
+    {file = "psycopg_binary-3.1.12-cp312-cp312-musllinux_1_1_aarch64.whl", hash = "sha256:047c4ba8d3089465b0a69c4c669128df43403867858d78da6b40b33788bfa89f"},
+    {file = "psycopg_binary-3.1.12-cp312-cp312-musllinux_1_1_i686.whl", hash = "sha256:8248b11ac490bb74de80457ab0e9cef31c08164ff7b867031927a17e5c9e19ed"},
+    {file = "psycopg_binary-3.1.12-cp312-cp312-musllinux_1_1_ppc64le.whl", hash = "sha256:6979c02acb9783c6134ee516751b8f891a2d4db7f73ebecc9e92750283d6fb99"},
+    {file = "psycopg_binary-3.1.12-cp312-cp312-musllinux_1_1_x86_64.whl", hash = "sha256:eaf2375b724ad61ee82a5c2a849e57b12b3cb510ec8845084132bbb907cb3335"},
+    {file = "psycopg_binary-3.1.12-cp312-cp312-win_amd64.whl", hash = "sha256:6177cfa6f872a9cc84dbfc7dc163af6ef01639c50acc9a441673f29c2305c37a"},
+    {file = "psycopg_binary-3.1.12-cp39-cp39-macosx_10_9_x86_64.whl", hash = "sha256:5112245daf98e22046316e72690689a8952a9b078908206a6b16cd28d84cde7c"},
+    {file = "psycopg_binary-3.1.12-cp39-cp39-macosx_11_0_arm64.whl", hash = "sha256:c2eb94bf0bd653c940517cd92dc4f98c85d505f69013b247dda747413bcf0a8b"},
+    {file = "psycopg_binary-3.1.12-cp39-cp39-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:d41b03ce52a109858735ac19fe0295e3f77bef0388d6a3e105074ad68f4a9645"},
+    {file = "psycopg_binary-3.1.12-cp39-cp39-manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:4fddc3c9beaf745de3da10230f0144a4c667b21c3f7a94a3bb1fb004954c9810"},
+    {file = "psycopg_binary-3.1.12-cp39-cp39-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl", hash = "sha256:c5987616698c895ae079fb5e26811b72948cb3b75c2c690446379298e96c1568"},
+    {file = "psycopg_binary-3.1.12-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:f4ae45d58bd79795a2d23d05be5496b226b09ac2688b9ed9808e13c345e2d542"},
+    {file = "psycopg_binary-3.1.12-cp39-cp39-musllinux_1_1_aarch64.whl", hash = "sha256:bb98252ac8ba41a121f88979e4232ffc1d6722c953531cbdae2b328322308581"},
+    {file = "psycopg_binary-3.1.12-cp39-cp39-musllinux_1_1_i686.whl", hash = "sha256:ca09e4937c9db24a58951ee9aea7aae7bca11a954b30c59f3b271e9bdebd80d7"},
+    {file = "psycopg_binary-3.1.12-cp39-cp39-musllinux_1_1_ppc64le.whl", hash = "sha256:03e321e149d051daa20892ed1bb3beabf0aae98a8c37da30ec80fa12306f9ba9"},
+    {file = "psycopg_binary-3.1.12-cp39-cp39-musllinux_1_1_x86_64.whl", hash = "sha256:d819cb43cccc10ba501b9d462409fcaaeb19f77b8379b2e7ca0ced4a49446d4a"},
+    {file = "psycopg_binary-3.1.12-cp39-cp39-win_amd64.whl", hash = "sha256:c9eb2ba27760bc1303f0708ba95b9e4f3f3b77a081ef4f7f53375c71da3a1bee"},
+]
+
+[[package]]
+name = "psycopg"
+version = "3.1.12"
+extras = ["binary"]
+requires_python = ">=3.7"
+summary = "PostgreSQL database adapter for Python"
+dependencies = [
+    "psycopg-binary==3.1.12",
+    "psycopg==3.1.12",
+]
+files = [
+    {file = "psycopg-3.1.12-py3-none-any.whl", hash = "sha256:8ec5230d6a7eb654b4fb3cf2d3eda8871d68f24807b934790504467f1deee9f8"},
+    {file = "psycopg-3.1.12.tar.gz", hash = "sha256:cec7ad2bc6a8510e56c45746c631cf9394148bdc8a9a11fd8cf8554ce129ae78"},
+]
+
+[[package]]
 name = "pycln"
 version = "2.2.2"
 requires_python = ">=3.6.2,<4"
@@ -594,6 +708,16 @@ summary = "A pure Python trie data structure implementation."
 files = [
     {file = "pygtrie-2.5.0-py3-none-any.whl", hash = "sha256:8795cda8105493d5ae159a5bef313ff13156c5d4d72feddefacaad59f8c8ce16"},
     {file = "pygtrie-2.5.0.tar.gz", hash = "sha256:203514ad826eb403dab1d2e2ddd034e0d1534bbe4dbe0213bb0593f66beba4e2"},
+]
+
+[[package]]
+name = "pymysql"
+version = "1.1.0"
+requires_python = ">=3.7"
+summary = "Pure Python MySQL Driver"
+files = [
+    {file = "PyMySQL-1.1.0-py3-none-any.whl", hash = "sha256:8969ec6d763c856f7073c4c64662882675702efcb114b4bcbb955aea3a069fa7"},
+    {file = "PyMySQL-1.1.0.tar.gz", hash = "sha256:4f13a7df8bf36a51e81dd9f3605fede45a4878fe02f9236349fd82a3f0612f96"},
 ]
 
 [[package]]
@@ -748,6 +872,16 @@ dependencies = [
 files = [
     {file = "typing_inspect-0.9.0-py3-none-any.whl", hash = "sha256:9ee6fc59062311ef8547596ab6b955e1b8aa46242d854bfc78f4f6b0eff35f9f"},
     {file = "typing_inspect-0.9.0.tar.gz", hash = "sha256:b23fc42ff6f6ef6954e4852c1fb512cdd18dbea03134f91f856a95ccc9461f78"},
+]
+
+[[package]]
+name = "tzdata"
+version = "2023.3"
+requires_python = ">=2"
+summary = "Provider of IANA time zone data"
+files = [
+    {file = "tzdata-2023.3-py2.py3-none-any.whl", hash = "sha256:7e65763eef3120314099b6939b5546db7adce1e7d6f2e179e3df563c70511eda"},
+    {file = "tzdata-2023.3.tar.gz", hash = "sha256:11ef1e08e54acb0d4f95bdb1be05da659673de4acbd21bf9c69e94cc5e907a3a"},
 ]
 
 [[package]]

@@ -3,13 +3,22 @@ from __future__ import annotations
 from inspect import Parameter, Signature
 from typing import TYPE_CHECKING, Any, ClassVar, Annotated, get_args, get_origin
 
-from sqlalchemy import Table
+from sqlalchemy import Table, MetaData
 from nonebot import get_plugin_by_module_name
 from sqlalchemy.orm import Mapped, DeclarativeBase
 
 from .utils import DependsInner, get_annotations
 
 __all__ = ("Model",)
+
+
+NAMING_CONVENTION = {
+    "ix": "ix_%(column_0_label)s",
+    "uq": "uq_%(table_name)s_%(column_0_name)s",
+    "ck": "ck_%(table_name)s_%(constraint_name)s",
+    "fk": "fk_%(table_name)s_%(column_0_name)s_%(referred_table_name)s",
+    "pk": "pk_%(table_name)s",
+}
 
 
 def _setup_di(cls: type[Model]) -> None:
@@ -83,6 +92,8 @@ def _setup_bind(cls: type[Model]) -> None:
 
 
 class Model(DeclarativeBase):
+    metadata = MetaData(naming_convention=NAMING_CONVENTION)
+
     if TYPE_CHECKING:
         __table__: ClassVar[Table]
         __bind_key__: ClassVar[str]

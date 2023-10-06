@@ -1,17 +1,16 @@
 import os
-from typing import TYPE_CHECKING, Any, Union
+from typing import Any, Union
 
 from sqlalchemy import URL
 from nonebot import get_driver
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-if TYPE_CHECKING:
-    from .migrate import AlembicConfig
+from .migrate import AlembicConfig
 
 __all__ = (
     "Config",
-    "config",
+    "plugin_config",
 )
 
 
@@ -22,7 +21,7 @@ class Config(BaseModel, arbitrary_types_allowed=True):
     sqlalchemy_engine_options: dict[str, Any] = {}
     sqlalchemy_session_options: dict[str, Any] = {}
 
-    alembic_config: Union[str, os.PathLike[str], "AlembicConfig"] = ""
+    alembic_config: Union[str, os.PathLike[str], AlembicConfig] = ""
     alembic_script_location: Union[str, os.PathLike[str]] = ""
     alembic_version_locations: Union[
         str, os.PathLike[str], dict[str, os.PathLike[str]]
@@ -31,4 +30,4 @@ class Config(BaseModel, arbitrary_types_allowed=True):
     alembic_startup_check: bool = True
 
 
-config = Config.parse_obj(get_driver().config)
+plugin_config = Config.parse_obj(get_driver().config)

@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import asyncio
 from typing import cast
 from operator import methodcaller
@@ -12,8 +10,7 @@ from alembic.operations.ops import MigrationScript
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncConnection
 from sqlalchemy import MetaData, Connection, TwoPhaseTransaction
 
-from nonebot_plugin_orm import AlembicConfig
-from nonebot_plugin_orm import config as plugin_config
+from nonebot_plugin_orm import AlembicConfig, plugin_config
 
 # 是否使用二阶段提交 (Two-Phase Commit)，
 # 当同时迁移多个数据库时，可以启用以保证迁移的原子性。
@@ -50,7 +47,7 @@ def run_migrations_offline() -> None:
     在这里调用 context.execute() 会将给定的字符串写入到脚本输出。
 
     """
-    # 使用 --sql 选项的情况下，将每个 URL 的迁移写入到单独的文件中。
+    # 使用 --sql 选项的情况下，将每个引擎的迁移写入到单独的 .sql 文件中。
 
     for name, engine in engines.items():
         file_ = f"{name}.sql"
@@ -107,19 +104,18 @@ async def run_migrations_online() -> None:
     这种情况下，我们需要为 context 创建一个连接。
 
     """
-    # 直接连接到数据库的情况下，对所有引擎启动事务，然后运行所有迁移，然后提交所有事务。
+    # 直接连接到数据库的情况下，对所有引擎启动事务，运行迁移，然后提交。
 
     conns: dict[str, AsyncConnection] = {}
     txns: dict[str, TwoPhaseTransaction] = {}
 
     try:
         for name, engine in engines.items():
-            if not (conn := conns.get(name)):
-                conn = conns[name] = await engine.connect()
-                if USE_TWOPHASE:
-                    txns[name] = await conn.run_sync(Connection.begin_twophase)
-                else:
-                    await conn.begin()
+            conn = conns[name] = await engine.connect()
+            if USE_TWOPHASE:
+                txns[name] = await conn.run_sync(Connection.begin_twophase)
+            else:
+                await conn.begin()
 
             await conn.run_sync(do_run_migrations, name, target_metadatas[name])
 

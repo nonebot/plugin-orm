@@ -3,13 +3,12 @@ from __future__ import annotations
 from typing import Any
 from functools import wraps, partial
 from contextlib import AsyncExitStack
-from typing_extensions import assert_never
 
 from nonebot import logger, get_driver
 from nonebot.plugin import PluginMetadata
 from sqlalchemy.util import greenlet_spawn
 from nonebot.matcher import current_matcher
-from sqlalchemy import URL, Table, MetaData, StaticPool, make_url
+from sqlalchemy import URL, Table, MetaData, make_url
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -20,7 +19,8 @@ from sqlalchemy.ext.asyncio import (
 
 from . import migrate
 from .model import Model
-from .config import Config, config
+from .utils import StreamToLogger
+from .config import Config, plugin_config
 
 __all__ = (
     # __init__
@@ -84,14 +84,14 @@ async def init_orm():
     _init_engines()
     _init_table()
     _session_factory = async_sessionmaker(
-        _engines[""], binds=_binds, **config.sqlalchemy_session_options
+        _engines[""], binds=_binds, **plugin_config.sqlalchemy_session_options
     )
 
-    with migrate.AlembicConfig() as alembic_config:
-        if config.alembic_startup_check:
+    with migrate.AlembicConfig(stdout=StreamToLogger()) as alembic_config:
+        if plugin_config.alembic_startup_check:
             await greenlet_spawn(migrate.check, alembic_config)
         else:
-            logger.warning("跳过 nonebot-plugin-orm 启动检查，直接创建所有表并标记数据库为最新修订版本")
+            logger.warning("跳过启动检查，直接创建所有表并标记数据库为最新修订版本")
 
             async with AsyncExitStack() as stack:
                 for name, engine in _engines.items():
@@ -120,9 +120,9 @@ def _create_engine(engine: str | URL | dict[str, Any] | AsyncEngine) -> AsyncEng
     if isinstance(engine, AsyncEngine):
         return engine
 
-    options = config.sqlalchemy_engine_options.copy()
+    options = plugin_config.sqlalchemy_engine_options.copy()
 
-    if config.sqlalchemy_echo:
+    if plugin_config.sqlalchemy_echo:
         options["echo"] = options["echo_pool"] = True
 
     if isinstance(engine, dict):
@@ -139,12 +139,12 @@ def _init_engines():
 
     _engines = {}
     _metadatas = {}
-    for name, engine in config.sqlalchemy_binds.items():
+    for name, engine in plugin_config.sqlalchemy_binds.items():
         _engines[name] = _create_engine(engine)
         _metadatas[name] = MetaData()
 
-    if config.sqlalchemy_database_url:
-        _engines[""] = _create_engine(config.sqlalchemy_database_url)
+    if plugin_config.sqlalchemy_database_url:
+        _engines[""] = _create_engine(plugin_config.sqlalchemy_database_url)
 
     if "" in _engines:
         return

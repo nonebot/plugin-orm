@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import sys
 import json
+from io import StringIO
 from typing import TypeVar
 from contextlib import suppress
 from functools import lru_cache
 from importlib.metadata import Distribution, PackageNotFoundError, distribution
 
+from nonebot import logger
 from nonebot.plugin import Plugin
 from nonebot.params import Depends
 
@@ -27,6 +29,23 @@ class _ReturnEq:
 
 
 return_eq = _ReturnEq()
+
+
+class StreamToLogger(StringIO):
+    """Use for startup migrate only"""
+
+    def __init__(self, level="INFO"):
+        self._level = level
+
+    def write(self, buffer):
+        for line in buffer.rstrip().splitlines():
+            # depth 0: this function
+            # depth 1: click.echo()
+            # depth 2: click.secho()
+            logger.opt(depth=3).log(self._level, line.rstrip())
+
+    def flush(self):
+        pass
 
 
 _packages_distributions = lru_cache(None)(packages_distributions)
@@ -52,7 +71,7 @@ def is_editable(plugin: Plugin) -> bool:
             )
 
     if not dist:
-        return "site-packages" in plugin.module.__path__[0]
+        return "site-packages" not in plugin.module.__path__[0]
 
     # https://github.com/pdm-project/pdm/blob/fee1e6bffd7de30315e2134e19f9a6f58e15867c/src/pdm/utils.py#L361-L374
     if getattr(dist, "link_file", None) is not None:

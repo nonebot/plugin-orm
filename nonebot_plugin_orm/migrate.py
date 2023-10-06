@@ -8,16 +8,15 @@ from argparse import Namespace
 from typing import Any, TextIO, cast
 from tempfile import TemporaryDirectory
 from configparser import DuplicateSectionError
-from importlib.resources import files, as_file
 from contextlib import suppress, contextmanager
 from collections.abc import Mapping, Iterable, Sequence, Generator
 
 import click
 from alembic.config import Config
 from sqlalchemy.util import asbool
-from nonebot import get_loaded_plugins
 from alembic.operations.ops import UpgradeOps
 from alembic.util.editor import open_in_editor
+from nonebot import logger, get_loaded_plugins
 from alembic.script import Script, ScriptDirectory
 from alembic.util.messaging import obfuscate_url_pw
 from alembic.autogenerate.api import RevisionContext
@@ -25,7 +24,6 @@ from alembic.util.langhelpers import rev_id as _rev_id
 from alembic.runtime.environment import EnvironmentContext, ProcessRevisionDirectiveFn
 
 from .utils import is_editable
-from .config import config as plugin_config
 
 if sys.version_info >= (3, 12):
     from typing import Self
@@ -76,15 +74,20 @@ class AlembicConfig(Config):
         config_args: Mapping[str, Any] = {},
         attributes: dict = {},
     ) -> None:
-        from . import _engines, _metadatas
+        from . import _engines, _metadatas, plugin_config
+
+        if file_ is None and Path("alembic.ini").is_file():
+            file_ = "alembic.ini"
 
         if plugin_config.alembic_script_location:
             script_location = plugin_config.alembic_script_location
         elif (
-            Path("migrations/env.py").exists()
-            and Path("migrations/script.py.mako").exists()
+            Path("migrations/env.py").is_file()
+            and Path("migrations/script.py.mako").is_file()
         ):
             script_location = "migrations"
+        elif len(_engines) == 1:
+            script_location = str(Path(__file__).parent / "templates" / "generic")
         else:
             script_location = str(Path(__file__).parent / "templates" / "multidb")
 
@@ -111,6 +114,8 @@ class AlembicConfig(Config):
         self._init_post_write_hooks()
 
     def __enter__(self) -> Self:
+        from . import plugin_config
+
         self._temp_dir = TemporaryDirectory()
 
         if self.get_main_option("version_locations"):
@@ -165,20 +170,21 @@ class AlembicConfig(Config):
 
     def print_stdout(self, text: str, *arg, **kwargs) -> None:
         if not getattr(self.cmd_opts, "quite", False):
-            click.secho(text % arg, **kwargs)
+            click.secho(text % arg, self.stdout, **kwargs)
 
     @contextmanager
-    def status(
-        self, status_msg: str, *args, nl: bool = False, **kwargs
-    ) -> Generator[None, Any, None]:
-        self.print_stdout(f"{status_msg} ...", *args, nl=nl, **kwargs)
+    def status(self, status_msg: str) -> Generator[None, Any, None]:
+        if getattr(self.cmd_opts, "quite", False):
+            yield
+            return
+
         try:
             yield
         except:
-            self.print_stdout(" 失败", fg="red")
+            logger.error(f"{status_msg} 失败")
             raise
         else:
-            self.print_stdout(" 成功", fg="green")
+            logger.success(f"{status_msg} 成功")
 
     def move_script(self, script: Script) -> Path:
         script_path = Path(script.path)
@@ -194,9 +200,8 @@ class AlembicConfig(Config):
         elif version_location := self._plugin_version_locations.get(""):
             plugin_name = ""
         else:
-            self.print_stdout(
-                f'无法找到 {plugin_name or "<default>"} 对应的版本目录，忽略 "{script.path}"',
-                fg="yellow",
+            logger.warning(
+                f'无法找到 {plugin_name or "<default>"} 对应的版本目录，忽略 "{script.path}"'
             )
             return script_path
 
@@ -254,7 +259,7 @@ class AlembicConfig(Config):
 
 
 def list_templates(config: AlembicConfig) -> None:
-    """列出所有可用的模板.
+    """列出所有可用的模板。
 
     参数:
         config: `AlembicConfig` 对象
@@ -274,10 +279,10 @@ def list_templates(config: AlembicConfig) -> None:
 def init(
     config: AlembicConfig,
     directory: Path = Path("migrations"),
-    template: str = "multidb",
+    template: str = "generic",
     package: bool = False,
 ) -> None:
-    """初始化脚本目录.
+    """初始化脚本目录。
 
     参数:
         config: `AlembicConfig` 对象
@@ -286,11 +291,11 @@ def init(
         package: 为 True 时，在脚本目录和版本目录中创建 `__init__.py` 文件
     """
 
-    if directory.exists() and next(directory.iterdir(), False):
+    if directory.is_dir() and next(directory.iterdir(), False):
         raise click.BadParameter(f'目录 "{directory}" 已存在并且不为空', param_hint="DIRECTORY")
 
     template_dir = Path(config.get_template_directory()) / template
-    if not template_dir.exists():
+    if not template_dir.is_dir():
         raise click.BadParameter(f"模板 {template} 不存在", param_hint="--template")
 
     with config.status(f'生成目录 "{directory}"'):
@@ -314,7 +319,7 @@ def revision(
     depends_on: str | None = None,
     process_revision_directives: ProcessRevisionDirectiveFn | None = None,
 ) -> Iterable[Script]:
-    """创建一个新修订文件.
+    """创建一个新修订文件。
 
     参数:
         config: `AlembicConfig` 对象
@@ -329,14 +334,13 @@ def revision(
         process_revision_directives: 修订的处理函数, 参见: `alembic.EnvironmentContext.configure.process_revision_directives`
     """
     if version_path is not None:
-        if version_path.exists() and next(version_path.iterdir(), False):
+        if version_path.is_dir() and next(version_path.iterdir(), False):
             raise click.BadParameter(
                 f'目录 "{version_path}" 已存在并且不为空', param_hint="--version-path"
             )
         config._add_version_location(version_path)
-        config.print_stdout(
-            f'临时将目录 "{version_path}" 添加到版本目录中，请稍后将其添加到 ALEMBIC_VERSION_LOCATIONS 中',
-            fg="yellow",
+        logger.warning(
+            f'临时将目录 "{version_path}" 添加到版本目录中，请稍后将其添加到 ALEMBIC_VERSION_LOCATIONS 中'
         )
 
     script_directory = ScriptDirectory.from_config(config)
@@ -388,7 +392,7 @@ def revision(
 
 
 def check(config: AlembicConfig) -> None:
-    """检查数据库是否与模型定义一致.
+    """检查数据库是否与模型定义一致。
 
     参数:
         config: `AlembicConfig` 对象
@@ -448,7 +452,7 @@ def merge(
     branch_label: str | None = None,
     rev_id: str | None = None,
 ) -> Iterable[Script]:
-    """合并多个修订. 创建一个新的修订文件.
+    """合并多个修订。创建一个新的修订文件。
 
     参数:
         config: `AlembicConfig` 对象
@@ -490,7 +494,7 @@ def upgrade(
     sql: bool = False,
     tag: str | None = None,
 ) -> None:
-    """升级到较新版本.
+    """升级到较新版本。
 
     参数:
         config: `AlembicConfig` 对象
@@ -531,7 +535,7 @@ def downgrade(
     sql: bool = False,
     tag: str | None = None,
 ) -> None:
-    """回退到先前版本.
+    """回退到先前版本。
 
     参数:
         config: `AlembicConfig` 对象
@@ -567,7 +571,7 @@ def downgrade(
 
 
 def show(config: AlembicConfig, revs: str | Sequence[str] = "current") -> None:
-    """显示修订的信息.
+    """显示修订的信息。
 
     参数:
         config: `AlembicConfig` 对象
@@ -594,7 +598,7 @@ def history(
     verbose: bool = False,
     indicate_current: bool = False,
 ) -> None:
-    """显示修订的历史.
+    """显示修订的历史。
 
     参数:
         config: `AlembicConfig` 对象
@@ -658,7 +662,7 @@ def history(
 def heads(
     config: AlembicConfig, verbose: bool = False, resolve_dependencies: bool = False
 ) -> None:
-    """显示所有的分支头.
+    """显示所有的分支头。
 
     参数:
         config: `AlembicConfig` 对象
@@ -679,7 +683,7 @@ def heads(
 
 
 def branches(config: AlembicConfig, verbose: bool = False) -> None:
-    """显示所有的分支.
+    """显示所有的分支。
 
     参数:
         config: `AlembicConfig` 对象
@@ -707,7 +711,7 @@ def branches(config: AlembicConfig, verbose: bool = False) -> None:
 
 
 def current(config: AlembicConfig, verbose: bool = False) -> None:
-    """显示当前的修订.
+    """显示当前的修订。
 
     参数:
         config: `AlembicConfig` 对象
@@ -738,13 +742,13 @@ def stamp(
     tag: str | None = None,
     purge: bool = False,
 ) -> None:
-    """将数据库标记为特定的修订版本, 不运行任何迁移.
+    """将数据库标记为特定的修订版本，不运行任何迁移。
 
     参数:
         config: `AlembicConfig` 对象
         revisions: 目标修订
         sql: 是否以 SQL 的形式输出修订脚本
-        tag: 一个任意的字符串, 可在自定义的 `env.py` 中通过 `alembic.EnvironmentContext.get_tag_argument` 获得
+        tag: 一个任意的字符串，可在自定义的 `env.py` 中通过 `alembic.EnvironmentContext.get_tag_argument` 获得
         purge: 是否在标记前清空数据库版本表
     """
 
@@ -786,7 +790,7 @@ def stamp(
 
 
 def edit(config: AlembicConfig, rev: str = "current") -> None:
-    """使用 `$EDITOR` 编辑修订文件.
+    """使用 `$EDITOR` 编辑修订文件。
 
     参数:
         config: `AlembicConfig` 对象
@@ -824,7 +828,7 @@ def edit(config: AlembicConfig, rev: str = "current") -> None:
 
 
 def ensure_version(config: AlembicConfig, sql: bool = False) -> None:
-    """创建版本表.
+    """创建版本表。
 
     参数:
         config: `AlembicConfig` 对象
