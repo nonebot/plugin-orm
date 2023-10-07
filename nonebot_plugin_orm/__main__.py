@@ -144,7 +144,7 @@ def downgrade(*args, **kwargs) -> None:
 
 
 @orm.command()
-@click.argument("rev", nargs=-1)
+@click.argument("revs", nargs=-1)
 @click.pass_obj
 def show(*args, **kwargs) -> None:
     """显示修订的信息。"""
