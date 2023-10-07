@@ -8,16 +8,16 @@ from argparse import Namespace
 from typing import Any, TextIO, cast
 from tempfile import TemporaryDirectory
 from configparser import DuplicateSectionError
-from contextlib import suppress, contextmanager
+from contextlib import AsyncExitStack, suppress, contextmanager
 from collections.abc import Mapping, Iterable, Sequence, Generator
 
 import click
 from alembic.config import Config
-from sqlalchemy.util import asbool
 from alembic.operations.ops import UpgradeOps
 from alembic.util.editor import open_in_editor
 from nonebot import logger, get_loaded_plugins
 from alembic.script import Script, ScriptDirectory
+from sqlalchemy.util import asbool, await_fallback
 from alembic.util.messaging import obfuscate_url_pw
 from alembic.autogenerate.api import RevisionContext
 from alembic.util.langhelpers import rev_id as _rev_id
@@ -498,6 +498,7 @@ def upgrade(
     revision: str | None = None,
     sql: bool = False,
     tag: str | None = None,
+    fast: bool = False,
 ) -> None:
     """升级到较新版本。
 
@@ -506,6 +507,7 @@ def upgrade(
         revision: 目标修订
         sql: 是否以 SQL 的形式输出修订脚本
         tag: 一个任意的字符串, 可在自定义的 `env.py` 中通过 `alembic.EnvironmentContext.get_tag_argument` 获得
+        fast: 是否快速升级到最新版本，不运行修订脚本，直接创建当前的表（只应该在数据库为空、修订较多且只有表结构更改时使用）
     """
 
     script = ScriptDirectory.from_config(config)
@@ -520,7 +522,14 @@ def upgrade(
         starting_rev, revision = revision.split(":", 2)
 
     def upgrade(rev, _):
-        return script._upgrade_revs(revision, rev)
+        nonlocal fast
+
+        if fast and revision in ("head", "heads") and not script.get_all_current(rev):
+            await_fallback(_upgrade_fast(config))
+            return script._stamp_revs(revision, rev)
+        else:
+            fast = False
+            return script._upgrade_revs(revision, rev)
 
     with EnvironmentContext(
         config,
@@ -532,6 +541,13 @@ def upgrade(
         tag=tag,
     ):
         script.run_env()
+
+
+async def _upgrade_fast(config: AlembicConfig):
+    async with AsyncExitStack() as stack:
+        for name, engine in config.attributes["engines"].items():
+            connection = await stack.enter_async_context(engine.begin())
+            await connection.run_sync(config.attributes["metadatas"][name].create_all)
 
 
 def downgrade(

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from typing import Any
 from functools import wraps, partial
-from contextlib import AsyncExitStack
 
 from nonebot import logger, get_driver
 from nonebot.plugin import PluginMetadata
@@ -92,13 +91,8 @@ async def init_orm():
             await greenlet_spawn(migrate.check, alembic_config)
         else:
             logger.warning("跳过启动检查，直接创建所有表并标记数据库为最新修订版本")
-
-            async with AsyncExitStack() as stack:
-                for name, engine in _engines.items():
-                    connection = await stack.enter_async_context(engine.begin())
-                    await connection.run_sync(_metadatas[name].create_all)
-
-                await greenlet_spawn(migrate.stamp, alembic_config)
+            await migrate._upgrade_fast(alembic_config)
+            await greenlet_spawn(migrate.stamp, alembic_config)
 
 
 @wraps(lambda: None)  # NOTE: for dependency injection

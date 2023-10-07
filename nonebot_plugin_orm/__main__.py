@@ -122,6 +122,11 @@ def merge(*args, **kwargs) -> Iterable[Script]:
 @click.argument("revision", required=False)
 @click.option("--sql", is_flag=True, help="以 SQL 的形式输出修订脚本")
 @click.option("--tag", help="一个任意的字符串, 可在自定义的 env.py 中使用")
+@click.option(
+    "--fast",
+    is_flag=True,
+    help="快速升级到最新版本，不运行修订脚本，直接创建当前的表（只应该在数据库为空、修订较多且只有表结构更改时使用）",
+)
 @click.pass_obj
 def upgrade(*args, **kwargs) -> None:
     """升级到较新版本。"""
