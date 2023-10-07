@@ -250,12 +250,18 @@ class AlembicConfig(Config):
                 options="REVISION_SCRIPT_FILENAME",
             )
 
-    def _add_version_location(self, path: str | Path) -> None:
+    def _add_version_location(self, path: str | Path) -> bool:
+        path = str(Path(path).resolve())
+        version_locations = self.get_main_option("version_locations", "")
+
+        if path in version_locations:
+            return False
+
         pathsep = _SPLIT_ON_PATH[self.get_main_option("version_path_separator")]
-        self.set_main_option(
-            "version_locations",
-            f"{self.get_main_option('version_locations', '')}{pathsep}{path}",
-        )
+        version_locations += f"{pathsep}{path}"
+        self.set_main_option("version_locations", version_locations)
+
+        return True
 
 
 def list_templates(config: AlembicConfig) -> None:
@@ -291,7 +297,11 @@ def init(
         package: 为 True 时，在脚本目录和版本目录中创建 `__init__.py` 文件
     """
 
-    if directory.is_dir() and next(directory.iterdir(), False):
+    if (
+        directory.is_dir()
+        and next(directory.iterdir(), False)
+        and not click.confirm(f'目录 "{directory}" 已存在并且不为空，是否继续初始化？')
+    ):
         raise click.BadParameter(f'目录 "{directory}" 已存在并且不为空', param_hint="DIRECTORY")
 
     template_dir = Path(config.get_template_directory()) / template
@@ -333,12 +343,7 @@ def revision(
         depends_on: 修订的依赖
         process_revision_directives: 修订的处理函数, 参见: `alembic.EnvironmentContext.configure.process_revision_directives`
     """
-    if version_path is not None:
-        if version_path.is_dir() and next(version_path.iterdir(), False):
-            raise click.BadParameter(
-                f'目录 "{version_path}" 已存在并且不为空', param_hint="--version-path"
-            )
-        config._add_version_location(version_path)
+    if version_path is not None and config._add_version_location(version_path):
         logger.warning(
             f'临时将目录 "{version_path}" 添加到版本目录中，请稍后将其添加到 ALEMBIC_VERSION_LOCATIONS 中'
         )
