@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import logging
 from typing import Any
 from functools import wraps, partial
 
+from nonebot.log import LoguruHandler
 from nonebot import logger, get_driver
 from nonebot.plugin import PluginMetadata
 from sqlalchemy.util import greenlet_spawn
@@ -179,6 +181,17 @@ def _init_table():
         _binds[model] = _engines.get(bind_key, _engines[""])
         table.to_metadata(_metadatas.get(bind_key, _metadatas[""]))
 
+
+def _init_logger():
+    handler = LoguruHandler()
+
+    for name in ("sqlalchemy", "alembic"):
+        logger = logging.getLogger(name)
+        logger.addHandler(handler)
+        logger.setLevel(logging.DEBUG)  # NOTE: loguru will filter by level
+
+
+_init_logger()
 
 from .sql import *
 from .model import *

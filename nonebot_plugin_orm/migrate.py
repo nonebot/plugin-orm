@@ -13,9 +13,9 @@ from collections.abc import Mapping, Iterable, Sequence, Generator
 
 import click
 from alembic.config import Config
+from nonebot import get_loaded_plugins
 from alembic.operations.ops import UpgradeOps
 from alembic.util.editor import open_in_editor
-from nonebot import logger, get_loaded_plugins
 from alembic.script import Script, ScriptDirectory
 from sqlalchemy.util import asbool, await_fallback
 from alembic.util.messaging import obfuscate_url_pw
@@ -23,7 +23,7 @@ from alembic.autogenerate.api import RevisionContext
 from alembic.util.langhelpers import rev_id as _rev_id
 from alembic.runtime.environment import EnvironmentContext, ProcessRevisionDirectiveFn
 
-from .utils import is_editable
+from .utils import is_editable, return_progressbar
 
 if sys.version_info >= (3, 12):
     from typing import Self
@@ -174,17 +174,15 @@ class AlembicConfig(Config):
 
     @contextmanager
     def status(self, status_msg: str) -> Generator[None, Any, None]:
-        if getattr(self.cmd_opts, "quite", False):
-            yield
-            return
+        self.print_stdout(f"{status_msg} ...", nl=False)
 
         try:
             yield
         except:
-            logger.error(f"{status_msg} 失败")
+            self.print_stdout(" 失败", fg="red")
             raise
         else:
-            logger.success(f"{status_msg} 成功")
+            self.print_stdout(" 成功", fg="green")
 
     def move_script(self, script: Script) -> Path:
         script_path = Path(script.path)
@@ -200,8 +198,9 @@ class AlembicConfig(Config):
         elif version_location := self._plugin_version_locations.get(""):
             plugin_name = ""
         else:
-            logger.warning(
-                f'无法找到 {plugin_name or "<default>"} 对应的版本目录，忽略 "{script.path}"'
+            self.print_stdout(
+                f'无法找到 {plugin_name or "<default>"} 对应的版本目录，忽略 "{script.path}"',
+                fg="yellow",
             )
             return script_path
 
@@ -344,8 +343,9 @@ def revision(
         process_revision_directives: 修订的处理函数, 参见: `alembic.EnvironmentContext.configure.process_revision_directives`
     """
     if version_path is not None and config._add_version_location(version_path):
-        logger.warning(
-            f'临时将目录 "{version_path}" 添加到版本目录中，请稍后将其添加到 ALEMBIC_VERSION_LOCATIONS 中'
+        config.print_stdout(
+            f'临时将目录 "{version_path}" 添加到版本目录中，请稍后将其添加到 ALEMBIC_VERSION_LOCATIONS 中',
+            fg="yellow",
         )
 
     script_directory = ScriptDirectory.from_config(config)
@@ -521,6 +521,7 @@ def upgrade(
             raise click.BadParameter("不允许在非 --sql 模式下使用修订范围", param_hint="REVISION")
         starting_rev, revision = revision.split(":", 2)
 
+    @return_progressbar
     def upgrade(rev, _):
         nonlocal fast
 
@@ -576,6 +577,7 @@ def downgrade(
             "--sql 模式下降级必须指定修订范围 <fromrev>:<torev>", param_hint="REVISION"
         )
 
+    @return_progressbar
     def downgrade(rev, _):
         return script._downgrade_revs(revision, rev)
 

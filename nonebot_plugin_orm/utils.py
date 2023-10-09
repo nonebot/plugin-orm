@@ -2,22 +2,30 @@ from __future__ import annotations
 
 import sys
 import json
+import logging
 from io import StringIO
 from typing import TypeVar
 from contextlib import suppress
-from functools import lru_cache
+from functools import wraps, lru_cache
+from collections.abc import Callable, Iterable
 from importlib.metadata import Distribution, PackageNotFoundError, distribution
 
-from nonebot import logger
+import click
 from nonebot.plugin import Plugin
 from nonebot.params import Depends
+from nonebot import logger, get_driver
 
 if sys.version_info >= (3, 10):
+    from typing import ParamSpec
     from importlib.metadata import packages_distributions
 else:
+    from typing_extensions import ParamSpec
+
     from importlib_metadata import packages_distributions
 
+
 _T = TypeVar("_T")
+_P = ParamSpec("_P")
 
 
 DependsInner = type(Depends())
@@ -46,6 +54,24 @@ class StreamToLogger(StringIO):
 
     def flush(self):
         pass
+
+
+def return_progressbar(func: Callable[_P, Iterable[_T]]) -> Callable[_P, Iterable[_T]]:
+    log_level = get_driver().config.log_level
+    if isinstance(log_level, str):
+        log_level = logging.getLevelName(log_level)
+
+    if log_level <= logging.INFO:
+        return func
+
+    @wraps(func)
+    def wrapper(*args: _P.args, **kwargs: _P.kwargs) -> Iterable[_T]:
+        with click.progressbar(
+            func(*args, **kwargs), label="运行迁移中", item_show_func=str
+        ) as bar:
+            yield from bar
+
+    return wrapper
 
 
 _packages_distributions = lru_cache(None)(packages_distributions)

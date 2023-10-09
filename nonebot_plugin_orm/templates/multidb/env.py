@@ -96,8 +96,7 @@ def do_run_migrations(conn: Connection, name: str, metadata: MetaData) -> None:
         process_revision_directives=process_revision_directives,
         **plugin_config.alembic_context,
     )
-    with config.status(f"迁移数据库 {name or '<default>'} 中"):
-        context.run_migrations(name=name)
+    context.run_migrations(name=name)
 
 
 async def run_migrations_online() -> None:
@@ -113,6 +112,7 @@ async def run_migrations_online() -> None:
 
     try:
         for name, engine in engines.items():
+            config.print_stdout(f"迁移数据库 {name or '<default>'} 中 ...")
             conn = conns[name] = await engine.connect()
             if USE_TWOPHASE:
                 txns[name] = await conn.run_sync(Connection.begin_twophase)
