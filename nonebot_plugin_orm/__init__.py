@@ -101,17 +101,19 @@ async def init_orm():
 
 @wraps(lambda: None)  # NOTE: for dependency injection
 def get_session(**local_kw: Any) -> AsyncSession:
-    if _session_factory is None:
-        raise RuntimeError("nonebot-plugin-orm 未初始化")
-    return _session_factory(**local_kw)
+    try:
+        return _session_factory(**local_kw)
+    except NameError:
+        raise RuntimeError("nonebot-plugin-orm 未初始化") from None
 
 
 def get_scoped_session() -> async_scoped_session[AsyncSession]:
-    if _session_factory is None:
-        raise RuntimeError("nonebot-plugin-orm 未初始化")
-    return async_scoped_session(
-        _session_factory, scopefunc=partial(current_matcher.get, None)
-    )
+    try:
+        return async_scoped_session(
+            _session_factory, scopefunc=partial(current_matcher.get, None)
+        )
+    except NameError:
+        raise RuntimeError("nonebot-plugin-orm 未初始化") from None
 
 
 def _create_engine(engine: str | URL | dict[str, Any] | AsyncEngine) -> AsyncEngine:
