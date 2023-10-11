@@ -24,8 +24,8 @@ class Config(BaseModel, arbitrary_types_allowed=True):
     alembic_config: Union[str, os.PathLike[str], AlembicConfig] = ""
     alembic_script_location: Union[str, os.PathLike[str]] = ""
     alembic_version_locations: Union[
-        str, os.PathLike[str], Dict[str, os.PathLike[str]]
-    ] = {}
+        str, os.PathLike[str], Dict[str, os.PathLike[str]], None
+    ] = None
     alembic_context: Dict[str, Any] = {"render_as_batch": True}
     alembic_startup_check: bool = True
 

@@ -5,15 +5,16 @@ import sys
 import shutil
 from pathlib import Path
 from argparse import Namespace
-from tempfile import TemporaryDirectory
+from operator import methodcaller
 from typing import Any, Tuple, TextIO, cast
 from configparser import DuplicateSectionError
+from tempfile import TemporaryDirectory, tempdir
 from contextlib import AsyncExitStack, suppress, contextmanager
 from collections.abc import Mapping, Iterable, Sequence, Generator
 
 import click
 from alembic.config import Config
-from nonebot import get_loaded_plugins
+from nonebot.plugin import Plugin
 from alembic.operations.ops import UpgradeOps
 from alembic.util.editor import open_in_editor
 from alembic.script import Script, ScriptDirectory
@@ -21,6 +22,7 @@ from sqlalchemy.util import asbool, await_fallback
 from alembic.util.messaging import obfuscate_url_pw
 from alembic.autogenerate.api import RevisionContext
 from alembic.util.langhelpers import rev_id as _rev_id
+from nonebot import logger, get_plugin, get_loaded_plugins
 from alembic.runtime.environment import EnvironmentContext, ProcessRevisionDirectiveFn
 
 from .utils import is_editable, return_progressbar
@@ -61,7 +63,7 @@ _SPLIT_ON_PATH = {
 
 
 class AlembicConfig(Config):
-    _temp_dir: TemporaryDirectory
+    _tempdir: TemporaryDirectory
     _plugin_version_locations: dict[str, Path]
 
     def __init__(
@@ -116,27 +118,22 @@ class AlembicConfig(Config):
     def __enter__(self) -> Self:
         from . import plugin_config
 
-        self._temp_dir = TemporaryDirectory()
+        self._tempdir = TemporaryDirectory()
+        self._plugin_version_locations = {}
 
         if self.get_main_option("version_locations"):
             # NOTE: skip if explicitly set
             return self
 
-        if not plugin_config.alembic_version_locations:
-            self._plugin_version_locations = {"": Path("migrations/versions")}
-        elif isinstance(plugin_config.alembic_version_locations, dict):
-            self._plugin_version_locations = {
-                name: Path(path)
-                for name, path in plugin_config.alembic_version_locations.items()
-            }
+        if isinstance(plugin_config.alembic_version_locations, dict):
+            if version_locations := plugin_config.alembic_version_locations.get(""):
+                self._plugin_version_locations[""] = Path(version_locations)
         else:
-            # NOTE: special case: mono repo with a central version location
-            self._plugin_version_locations = {
-                "": Path(plugin_config.alembic_version_locations)
-            }
+            self._plugin_version_locations[""] = Path(
+                plugin_config.alembic_version_locations or "migrations/versions"
+            )
 
-        temp_version_locations = Path(self._temp_dir.name)
-        self._add_version_location(temp_version_locations)
+        tempdir = Path(self._tempdir.name)
 
         for plugin in get_loaded_plugins():
             if not plugin.metadata or not (
@@ -146,24 +143,34 @@ class AlembicConfig(Config):
 
             version_location = version_module.__path__[0]
             if is_editable(plugin):
-                self._add_version_location(version_location)
-            else:
-                # NOTE: read-only, copy to temp dir
-                self._add_version_location(temp_version_locations / plugin.name)
-                shutil.copytree(version_location, temp_version_locations / plugin.name)
+                self._plugin_version_locations[plugin.name] = Path(version_location)
+            elif version_locations := self._plugin_version_locations.get(""):
+                self._plugin_version_locations[plugin.name] = (
+                    version_locations / plugin.name
+                )
+            shutil.copytree(version_location, tempdir / plugin.name)
 
-        for plugin_name, version_location in self._plugin_version_locations.items():
+        if isinstance(plugin_config.alembic_version_locations, dict):
+            for name, path in plugin_config.alembic_version_locations.items():
+                with suppress(FileNotFoundError):
+                    shutil.copytree(path, tempdir / name, dirs_exist_ok=True)
+                self._plugin_version_locations[name] = Path(path)
+        else:
             with suppress(FileNotFoundError):
                 shutil.copytree(
-                    version_location,
-                    temp_version_locations / plugin_name,
-                    dirs_exist_ok=True,
+                    self._plugin_version_locations[""], tempdir, dirs_exist_ok=True
                 )
+
+        pathsep = _SPLIT_ON_PATH[self.get_main_option("version_path_separator")]
+        version_location = pathsep.join(
+            map(str, (tempdir, *filter(methodcaller("is_dir"), tempdir.iterdir())))
+        )
+        self.set_main_option("version_locations", version_location)
 
         return self
 
     def __exit__(self, *_) -> None:
-        self._temp_dir.cleanup()
+        self._tempdir.cleanup()
 
     def get_template_directory(self) -> str:
         return str(Path(__file__).parent / "templates")
@@ -188,7 +195,7 @@ class AlembicConfig(Config):
         script_path = Path(script.path)
 
         try:
-            script_path = script_path.relative_to(self._temp_dir.name)
+            script_path = script_path.relative_to(self._tempdir.name)
         except ValueError:
             return script_path
 
@@ -248,19 +255,6 @@ class AlembicConfig(Config):
                 entrypoint="black",
                 options="REVISION_SCRIPT_FILENAME",
             )
-
-    def _add_version_location(self, path: str | Path) -> bool:
-        path = str(Path(path).resolve())
-        version_locations = self.get_main_option("version_locations", "")
-
-        if path in version_locations:
-            return False
-
-        pathsep = _SPLIT_ON_PATH[self.get_main_option("version_path_separator")]
-        version_locations += f"{pathsep}{path}"
-        self.set_main_option("version_locations", version_locations)
-
-        return True
 
 
 def list_templates(config: AlembicConfig) -> None:
@@ -342,11 +336,22 @@ def revision(
         depends_on: 修订的依赖
         process_revision_directives: 修订的处理函数, 参见: `alembic.EnvironmentContext.configure.process_revision_directives`
     """
-    if version_path is not None and config._add_version_location(version_path):
-        config.print_stdout(
-            f'临时将目录 "{version_path}" 添加到版本目录中，请稍后将其添加到 ALEMBIC_VERSION_LOCATIONS 中',
-            fg="yellow",
+    if version_path:
+        version_location = config.get_main_option("version_locations")
+        pathsep = _SPLIT_ON_PATH[config.get_main_option("version_path_separator")]
+        config.set_main_option(
+            "version_locations", f"{version_location}{pathsep}{version_path}"
         )
+        logger.warning(
+            f'临时将目录 "{version_path}" 添加到版本目录中，请稍后将其添加到 ALEMBIC_VERSION_LOCATIONS 中'
+        )
+    elif (
+        branch_label
+        and (plugin := get_plugin(branch_label))
+        and plugin.metadata
+        and plugin.metadata.extra.get("orm_version_location")
+    ):
+        version_path = Path(config._tempdir.name) / branch_label
 
     script_directory = ScriptDirectory.from_config(config)
 

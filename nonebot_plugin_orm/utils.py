@@ -80,7 +80,6 @@ _packages_distributions = lru_cache(None)(packages_distributions)
 # https://github.com/pdm-project/pdm/blob/fee1e6bffd7de30315e2134e19f9a6f58e15867c/src/pdm/utils.py#L361-L374
 def is_editable(plugin: Plugin) -> bool:
     """Check if the distribution is installed in editable mode"""
-
     while plugin.parent_plugin:
         plugin = plugin.parent_plugin
 
@@ -104,12 +103,10 @@ def is_editable(plugin: Plugin) -> bool:
         return True
 
     direct_url = dist.read_text("direct_url.json")
-
     if not direct_url:
         return False
 
     direct_url_data = json.loads(direct_url)
-
     return direct_url_data.get("dir_info", {}).get("editable", False)
 
 
