@@ -5,8 +5,8 @@ import sys
 import shutil
 from pathlib import Path
 from argparse import Namespace
-from typing import Any, TextIO, cast
 from tempfile import TemporaryDirectory
+from typing import Any, Tuple, TextIO, cast
 from configparser import DuplicateSectionError
 from contextlib import AsyncExitStack, suppress, contextmanager
 from collections.abc import Mapping, Iterable, Sequence, Generator
@@ -838,12 +838,12 @@ def edit(config: AlembicConfig, rev: str = "current") -> None:
         with EnvironmentContext(config, script, fn=edit_current):
             script.run_env()
     else:
-        revs = cast(tuple[Script, ...], script.get_revisions(rev))
+        revs = cast(Tuple[Script, ...], script.get_revisions(rev))
 
         if not revs:
             raise click.BadParameter(f'没有 "{rev}" 指示的修订文件')
 
-        for sc in cast(tuple[Script], revs):
+        for sc in cast(Tuple[Script], revs):
             script_path = config.move_script(sc)
             open_in_editor(str(script_path))
 

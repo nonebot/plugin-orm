@@ -14,7 +14,7 @@ dependencies = [
     "sqlalchemy~=2.0",
     "typing-extensions~=4.8; python_version < '3.12'",
 ]
-requires-python = ">=3.9,<4.0"
+requires-python = ">=3.8,<4.0"
 readme = "README.md"
 license = { text = "MIT" }
 keywords = ["nonebot", "orm", "sqlalchemy"]
@@ -27,7 +27,11 @@ documentation = "https://github.com/nonebot/plugin-orm"
 [project.optional-dependencies]
 default = ["aiosqlite~=0.19", "nonebot-plugin-localstore~=0.5"]
 mysql = ["aiomysql~=0.2"]
+asyncmy = ["asyncmy~=0.2"]
+aiomysql = ["aiomysql~=0.2"]
 postgresql = ["psycopg[binary]~=3.1"]
+psycopg = ["psycopg[binary]~=3.1"]
+asyncpg = ["asyncpg~=0.28"]
 sqlite = ["aiosqlite~=0.19"]
 
 [project.entry-points.nb_scripts]
@@ -40,14 +44,12 @@ build-backend = "pdm.backend"
 [tool.pdm]
 [tool.pdm.dev-dependencies]
 dev = [
-    "aiomysql~=0.2",
     "aiosqlite~=0.19",
     "black~=23.7",
     "isort~=5.12",
     "nonebot-plugin-localstore~=0.5",
     "nonemoji~=0.1",
     "pre-commit~=3.4",
-    "psycopg[binary]~=3.1",
     "pycln~=2.2",
 ]
 
@@ -69,4 +71,4 @@ extra_standard_library = ["typing_extensions"]
 path = "."
 
 [tool.pyright]
-pythonVersion = "3.9"
+pythonVersion = "3.8"

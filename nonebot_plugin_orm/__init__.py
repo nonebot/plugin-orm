@@ -75,8 +75,10 @@ _engines: dict[str, AsyncEngine]
 _metadatas: dict[str, MetaData]
 _session_factory: async_sessionmaker[AsyncSession]
 
+_driver = get_driver()
 
-@get_driver().on_startup
+
+@_driver.on_startup
 async def init_orm():
     global _session_factory
 
