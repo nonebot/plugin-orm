@@ -33,6 +33,7 @@ postgresql = ["psycopg[binary]~=3.1"]
 psycopg = ["psycopg[binary]~=3.1"]
 asyncpg = ["asyncpg~=0.28"]
 sqlite = ["aiosqlite~=0.19"]
+aiosqlite = ["aiosqlite~=0.19"]
 
 [project.entry-points.nb_scripts]
 orm = "nonebot_plugin_orm.__main__:main"
