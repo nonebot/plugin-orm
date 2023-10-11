@@ -5,10 +5,10 @@ from typing import Any
 from functools import wraps, partial
 
 from nonebot.log import LoguruHandler
-from nonebot import logger, get_driver
 from nonebot.plugin import PluginMetadata
 from sqlalchemy.util import greenlet_spawn
 from nonebot.matcher import current_matcher
+from nonebot import logger, require, get_driver
 from sqlalchemy import URL, Table, MetaData, make_url
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
@@ -149,10 +149,11 @@ def _init_engines():
 
     try:
         import aiosqlite
-        from nonebot_plugin_localstore import get_data_file
 
         del aiosqlite
-    except ImportError:
+        require("nonebot_plugin_localstore")
+        from nonebot_plugin_localstore import get_data_file
+    except (ImportError, RuntimeError):
         raise ValueError(
             '必须指定一个默认数据库引擎 (SQLALCHEMY_DATABASE_URL 或 SQLALCHEMY_BINDS[""])'
         ) from None
