@@ -52,6 +52,7 @@ def run_migrations_offline() -> None:
     # 使用 --sql 选项的情况下，将每个引擎的迁移写入到单独的 .sql 文件中。
 
     for name, engine in engines.items():
+        config.print_stdout(f"迁移数据库 {name or '<default>'} 中 ...")
         file_ = f"{name}.sql"
         with open(file_, "w") as buffer:
             context.configure(
@@ -62,9 +63,7 @@ def run_migrations_offline() -> None:
                 dialect_opts={"paramstyle": "named"},
                 **plugin_config.alembic_context,
             )
-            with context.begin_transaction(), config.status(
-                f"迁移数据库 {name or '<default>'} 中"
-            ):
+            with context.begin_transaction():
                 context.run_migrations(name=name)
             config.print_stdout(f"将输出写入到 {file_}")
 

@@ -59,7 +59,7 @@ async def run_migrations_online() -> None:
 
     这种情况下，我们需要为 context 创建一个连接。
     """
-    async with engine.begin() as connection:
+    async with engine.connect() as connection:
         await connection.run_sync(do_run_migrations)
 
 
