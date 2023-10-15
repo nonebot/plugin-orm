@@ -1,6 +1,6 @@
 [project]
 name = "nonebot-plugin-orm"
-version = "0.1.2"
+version = "0.2.0"
 description = "SQLAlchemy ORM support for nonebot"
 authors = [
     { name = "yanyongyu", email = "yyy@nonebot.dev" },
@@ -52,7 +52,7 @@ dev = [
     "nonebot-plugin-localstore~=0.5",
     "nonemoji~=0.1",
     "pre-commit~=3.4",
-    "pycln~=2.2",
+    "pycln~=2.3",
 ]
 
 [tool.black]

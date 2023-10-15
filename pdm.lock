@@ -6,7 +6,7 @@ groups = ["default", "dev"]
 cross_platform = true
 static_urls = false
 lock_version = "4.3"
-content_hash = "sha256:5f96fa171a9a8f9d70cb69efdcef91771231ecce537e7baf4e1c660f739cf655"
+content_hash = "sha256:671bc374cc5cac41dbd5fa291ae14c4231a8417186e007aba215b907ec22a1ea"
 
 [[package]]
 name = "aiosqlite"
@@ -584,7 +584,7 @@ files = [
 
 [[package]]
 name = "pycln"
-version = "2.2.2"
+version = "2.3.0"
 requires_python = ">=3.6.2,<4"
 summary = "A formatter for finding and removing unused import statements."
 dependencies = [
@@ -595,8 +595,8 @@ dependencies = [
     "typer>=0.4.1",
 ]
 files = [
-    {file = "pycln-2.2.2-py3-none-any.whl", hash = "sha256:73ed5e997dac02cb6dc84bf87c1d834191d026cfabade94e913973610abd65f7"},
-    {file = "pycln-2.2.2.tar.gz", hash = "sha256:a8a1bd0ac0f5d2fb5fcfb409e027667c2a5ac5341bb7fa23d4a7bd1c1cfc3fec"},
+    {file = "pycln-2.3.0-py3-none-any.whl", hash = "sha256:d6731e17a60728b827211de2ca4bfc9b40ea1df99a12f3e0fd06a98a0c9e6caa"},
+    {file = "pycln-2.3.0.tar.gz", hash = "sha256:8759b36753234c8f95895a31dde329479ffed2218f49d1a1c77c7edccc02e09b"},
 ]
 
 [[package]]
