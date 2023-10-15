@@ -186,12 +186,19 @@ def _init_table():
 
 
 def _init_logger():
-    handler = LoguruHandler()
+    log_level = _driver.config.log_level
+    if isinstance(log_level, str):
+        log_level = logging.getLevelName(log_level)
 
-    for name in ("sqlalchemy", "alembic"):
+    levels = {"alembic": log_level, "sqlalchemy": log_level}
+    if not plugin_config.sqlalchemy_echo:
+        levels["sqlalchemy.engine"] = levels["sqlalchemy.pool"] = logging.WARNING
+
+    handler = LoguruHandler()
+    for name, level in levels.items():
         logger = logging.getLogger(name)
         logger.addHandler(handler)
-        logger.setLevel(logging.DEBUG)  # NOTE: loguru will filter by level
+        logger.setLevel(level)
 
 
 _init_logger()
