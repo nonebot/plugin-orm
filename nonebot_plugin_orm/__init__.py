@@ -1,27 +1,31 @@
 from __future__ import annotations
 
+import sys
 import logging
-from typing import Any
+from asyncio import gather
+from operator import methodcaller
 from functools import wraps, partial
+from typing import Any, AsyncGenerator
 
+from nonebot.params import Depends
 from nonebot.log import LoguruHandler
 from nonebot.plugin import PluginMetadata
+import sqlalchemy.ext.asyncio as sa_asyncio
 from sqlalchemy.util import greenlet_spawn
 from nonebot.matcher import current_matcher
 from nonebot import logger, require, get_driver
 from sqlalchemy import URL, Table, MetaData, make_url
-from sqlalchemy.ext.asyncio import (
-    AsyncEngine,
-    AsyncSession,
-    async_sessionmaker,
-    create_async_engine,
-    async_scoped_session,
-)
+from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from . import migrate
 from .model import Model
 from .utils import StreamToLogger
 from .config import Config, plugin_config
+
+if sys.version_info >= (3, 10):
+    from typing import Annotated
+else:
+    from typing_extensions import Annotated
 
 __all__ = (
     # __init__
@@ -75,7 +79,7 @@ __plugin_meta__ = PluginMetadata(
 _binds: dict[type[Model], AsyncEngine]
 _engines: dict[str, AsyncEngine]
 _metadatas: dict[str, MetaData]
-_session_factory: async_sessionmaker[AsyncSession]
+_session_factory: sa_asyncio.async_sessionmaker[AsyncSession]
 
 _driver = get_driver()
 
@@ -86,7 +90,7 @@ async def init_orm():
 
     _init_engines()
     _init_table()
-    _session_factory = async_sessionmaker(
+    _session_factory = sa_asyncio.async_sessionmaker(
         _engines[""], binds=_binds, **plugin_config.sqlalchemy_session_options
     )
 
@@ -100,20 +104,33 @@ async def init_orm():
 
 
 @wraps(lambda: None)  # NOTE: for dependency injection
-def get_session(**local_kw: Any) -> AsyncSession:
+def get_session(**local_kw: Any) -> sa_asyncio.AsyncSession:
     try:
         return _session_factory(**local_kw)
     except NameError:
         raise RuntimeError("nonebot-plugin-orm 未初始化") from None
 
 
-def get_scoped_session() -> async_scoped_session[AsyncSession]:
+AsyncSession = Annotated[sa_asyncio.AsyncSession, Depends(get_session)]
+
+
+async def get_scoped_session() -> (
+    AsyncGenerator[sa_asyncio.async_scoped_session[AsyncSession], None]
+):
     try:
-        return async_scoped_session(
+        scoped_session = async_scoped_session(
             _session_factory, scopefunc=partial(current_matcher.get, None)
         )
+        yield scoped_session
     except NameError:
         raise RuntimeError("nonebot-plugin-orm 未初始化") from None
+
+    await gather(*map(methodcaller("close"), scoped_session.registry.registry.values()))
+
+
+async_scoped_session = Annotated[
+    sa_asyncio.async_scoped_session[AsyncSession], Depends(get_scoped_session)
+]
 
 
 def _create_engine(engine: str | URL | dict[str, Any] | AsyncEngine) -> AsyncEngine:
