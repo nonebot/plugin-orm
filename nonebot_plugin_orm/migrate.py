@@ -4,17 +4,18 @@ import os
 import sys
 import shutil
 from pathlib import Path
+from itertools import chain
 from argparse import Namespace
 from operator import methodcaller
-from typing import Any, Tuple, TextIO, cast
+from tempfile import TemporaryDirectory
 from configparser import DuplicateSectionError
-from tempfile import TemporaryDirectory, tempdir
-from contextlib import AsyncExitStack, suppress, contextmanager
+from typing_extensions import ParamSpec, Concatenate
+from typing import Any, Tuple, TextIO, TypeVar, Callable, cast
 from collections.abc import Mapping, Iterable, Sequence, Generator
+from contextlib import ExitStack, AsyncExitStack, suppress, contextmanager
 
 import click
 from alembic.config import Config
-from nonebot.plugin import Plugin
 from alembic.operations.ops import UpgradeOps
 from alembic.util.editor import open_in_editor
 from alembic.script import Script, ScriptDirectory
@@ -29,8 +30,10 @@ from .utils import is_editable, return_progressbar
 
 if sys.version_info >= (3, 12):
     from typing import Self
+    from importlib.resources import files, as_file
 else:
     from typing_extensions import Self
+    from importlib_resources import files, as_file
 
 
 __all__ = (
@@ -52,7 +55,8 @@ __all__ = (
     "ensure_version",
 )
 
-
+_T = TypeVar("_T")
+_P = ParamSpec("_P")
 _SPLIT_ON_PATH = {
     None: " ",
     "space": " ",
@@ -63,8 +67,9 @@ _SPLIT_ON_PATH = {
 
 
 class AlembicConfig(Config):
-    _tempdir: TemporaryDirectory
+    _exit_stack: ExitStack
     _plugin_version_locations: dict[str, Path]
+    _temp_dir: TemporaryDirectory | None = None
 
     def __init__(
         self,
@@ -75,6 +80,7 @@ class AlembicConfig(Config):
         cmd_opts: Namespace | None = None,
         config_args: Mapping[str, Any] = {},
         attributes: dict = {},
+        use_tempdir: bool = True,
     ) -> None:
         from . import _engines, _metadatas, plugin_config
 
@@ -113,64 +119,23 @@ class AlembicConfig(Config):
             },
         )
 
-        self._init_post_write_hooks()
-
-    def __enter__(self) -> Self:
-        from . import plugin_config
-
-        self._tempdir = TemporaryDirectory()
+        self._exit_stack = ExitStack()
         self._plugin_version_locations = {}
+        if use_tempdir:
+            self._temp_dir = TemporaryDirectory()
+            self._exit_stack.enter_context(self._temp_dir)
 
-        if self.get_main_option("version_locations"):
-            # NOTE: skip if explicitly set
-            return self
+        self._init_post_write_hooks()
+        self._init_version_locations()
 
-        if isinstance(plugin_config.alembic_version_locations, dict):
-            if version_locations := plugin_config.alembic_version_locations.get(""):
-                self._plugin_version_locations[""] = Path(version_locations)
-        else:
-            self._plugin_version_locations[""] = Path(
-                plugin_config.alembic_version_locations or "migrations/versions"
-            )
-
-        tempdir = Path(self._tempdir.name)
-
-        for plugin in get_loaded_plugins():
-            if not plugin.metadata or not (
-                version_module := plugin.metadata.extra.get("orm_version_location")
-            ):
-                continue
-
-            version_location = version_module.__path__[0]
-            if is_editable(plugin):
-                self._plugin_version_locations[plugin.name] = Path(version_location)
-            elif version_locations := self._plugin_version_locations.get(""):
-                self._plugin_version_locations[plugin.name] = (
-                    version_locations / plugin.name
-                )
-            shutil.copytree(version_location, tempdir / plugin.name)
-
-        if isinstance(plugin_config.alembic_version_locations, dict):
-            for name, path in plugin_config.alembic_version_locations.items():
-                with suppress(FileNotFoundError):
-                    shutil.copytree(path, tempdir / name, dirs_exist_ok=True)
-                self._plugin_version_locations[name] = Path(path)
-        else:
-            with suppress(FileNotFoundError):
-                shutil.copytree(
-                    self._plugin_version_locations[""], tempdir, dirs_exist_ok=True
-                )
-
-        pathsep = _SPLIT_ON_PATH[self.get_main_option("version_path_separator")]
-        version_location = pathsep.join(
-            map(str, (tempdir, *filter(methodcaller("is_dir"), tempdir.iterdir())))
-        )
-        self.set_main_option("version_locations", version_location)
-
+    def __enter__(self: Self) -> Self:
         return self
 
     def __exit__(self, *_) -> None:
-        self._tempdir.cleanup()
+        self.close()
+
+    def close(self) -> None:
+        self._exit_stack.close()
 
     def get_template_directory(self) -> str:
         return str(Path(__file__).parent / "templates")
@@ -194,8 +159,11 @@ class AlembicConfig(Config):
     def move_script(self, script: Script) -> Path:
         script_path = Path(script.path)
 
+        if not self._temp_dir:
+            return script_path
+
         try:
-            script_path = script_path.relative_to(self._tempdir.name)
+            script_path = script_path.relative_to(self._temp_dir.name)
         except ValueError:
             return script_path
 
@@ -256,6 +224,89 @@ class AlembicConfig(Config):
                 options="REVISION_SCRIPT_FILENAME",
             )
 
+    def _init_version_locations(self) -> None:
+        from . import plugin_config
+
+        alembic_version_locations = plugin_config.alembic_version_locations
+
+        if self.get_main_option("version_locations"):
+            # NOTE: skip if explicitly set
+            return
+
+        if isinstance(alembic_version_locations, dict):
+            if _main_version_location := alembic_version_locations.get(""):
+                main_version_location = self._plugin_version_locations[""] = Path(
+                    _main_version_location
+                )
+            else:
+                main_version_location = None
+        else:
+            main_version_location = self._plugin_version_locations[""] = Path(
+                alembic_version_locations or "migrations/versions"
+            )
+
+        temp_dir = Path(self._temp_dir.name) if self._temp_dir else None
+        version_locations = {}
+
+        for plugin in get_loaded_plugins():
+            if not plugin.metadata or not (
+                version_module := plugin.metadata.extra.get("orm_version_location")
+            ):
+                continue
+
+            version_location = files(version_module)
+
+            if is_editable(plugin) and isinstance(version_location, Path):
+                self._plugin_version_locations[plugin.name] = version_location
+            elif main_version_location:
+                self._plugin_version_locations[plugin.name] = (
+                    main_version_location / plugin.name
+                )
+
+            version_location = self._exit_stack.enter_context(as_file(version_location))
+            version_locations[version_location] = plugin.name
+
+        if isinstance(alembic_version_locations, dict):
+            for name, path in alembic_version_locations.items():
+                path = self._plugin_version_locations[name] = Path(path)
+                version_locations[path] = name
+        elif main_version_location:
+            version_locations[main_version_location] = ""
+
+        if temp_dir:
+            for src, dst in version_locations.items():
+                with suppress(FileNotFoundError):
+                    shutil.copytree(src, temp_dir / dst, dirs_exist_ok=True)
+
+            version_locations = (
+                temp_dir,
+                *filter(methodcaller("is_dir"), temp_dir.iterdir()),
+            )
+        else:
+            version_locations = reversed(version_locations)
+
+            if main_version_location:
+                version_locations = chain(
+                    filter(methodcaller("is_dir"), main_version_location.iterdir()),
+                    version_locations,
+                )
+
+        pathsep = _SPLIT_ON_PATH[self.get_main_option("version_path_separator")]
+        self.set_main_option(
+            "version_locations", pathsep.join(map(str, version_locations))
+        )
+
+
+def use_tempdir(
+    func: Callable[Concatenate[AlembicConfig, _P], _T]
+) -> Callable[Concatenate[AlembicConfig, _P], _T]:
+    def wrapper(config: AlembicConfig, *args: _P.args, **kwargs: _P.kwargs) -> _T:
+        if config._temp_dir:
+            return func(config, *args, **kwargs)
+        raise RuntimeError("AlembicConfig 未启用临时目录")
+
+    return wrapper
+
 
 def list_templates(config: AlembicConfig) -> None:
     """列出所有可用的模板。
@@ -310,6 +361,7 @@ def init(
         )
 
 
+@use_tempdir
 def revision(
     config: AlembicConfig,
     message: str | None = None,
@@ -351,7 +403,9 @@ def revision(
         and plugin.metadata
         and plugin.metadata.extra.get("orm_version_location")
     ):
-        version_path = Path(config._tempdir.name) / branch_label
+        version_path = (
+            Path(cast(TemporaryDirectory, config._temp_dir).name) / branch_label
+        )
 
     script_directory = ScriptDirectory.from_config(config)
 
@@ -455,6 +509,7 @@ def check(config: AlembicConfig) -> None:
         config.print_stdout("没有检测到新的升级操作")
 
 
+@use_tempdir
 def merge(
     config: AlembicConfig,
     revisions: tuple[str, ...],
@@ -530,12 +585,12 @@ def upgrade(
     def upgrade(rev, _):
         nonlocal fast
 
-        if fast and revision in ("head", "heads") and not script.get_all_current(rev):
+        if fast and revision in {"head", "heads"} and not script.get_all_current(rev):
             await_fallback(_upgrade_fast(config))
             return script._stamp_revs(revision, rev)
         else:
             fast = False
-            return script._upgrade_revs(revision, rev)
+            return script._upgrade_revs(revision, rev)  # type: ignore
 
     with EnvironmentContext(
         config,
@@ -817,6 +872,7 @@ def stamp(
         script.run_env()
 
 
+@use_tempdir
 def edit(config: AlembicConfig, rev: str = "current") -> None:
     """使用 `$EDITOR` 编辑修订文件。
 
@@ -826,9 +882,6 @@ def edit(config: AlembicConfig, rev: str = "current") -> None:
     """
 
     script = ScriptDirectory.from_config(config)
-    temp_version_locations = click.get_current_context().meta.get(
-        f"{__name__}.temp_version_locations"
-    )
 
     if rev == "current":
 

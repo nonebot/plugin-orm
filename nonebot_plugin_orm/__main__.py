@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Iterable
 from argparse import Namespace
+from warnings import catch_warnings, filterwarnings
 
 import click
 from alembic.script import Script
@@ -38,15 +39,19 @@ def orm(
     ctx: click.Context, config: Path, name: str, x: tuple[str, ...], quite: bool
 ) -> None:
     ctx.show_default = True
+    use_tempdir = ctx.invoked_subcommand in ("revision", "merge", "edit")
 
     if isinstance(plugin_config.alembic_config, AlembicConfig):
         ctx.obj = plugin_config.alembic_config
     else:
         ctx.obj = AlembicConfig(
-            config, name, cmd_opts=Namespace(config=config, name=name, x=x, quite=quite)
+            config, name, cmd_opts=Namespace(**ctx.params), use_tempdir=use_tempdir
         )
 
-    ctx.with_resource(ctx.obj)
+    ctx.call_on_close(ctx.obj.close)
+    if use_tempdir:
+        ctx.with_resource(catch_warnings())
+        filterwarnings("ignore", r"Revision \w* is present more than once", UserWarning)
 
 
 @orm.result_callback()

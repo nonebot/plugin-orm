@@ -4,6 +4,7 @@ import sys
 import json
 import logging
 from io import StringIO
+from pathlib import Path
 from typing import TypeVar
 from contextlib import suppress
 from functools import wraps, lru_cache
@@ -15,12 +16,16 @@ from nonebot.plugin import Plugin
 from nonebot.params import Depends
 from nonebot import logger, get_driver
 
+if sys.version_info >= (3, 9):
+    from importlib.resources import files
+else:
+    from importlib_resources import files
+
 if sys.version_info >= (3, 10):
     from typing import ParamSpec
     from importlib.metadata import packages_distributions
 else:
     from typing_extensions import ParamSpec
-
     from importlib_metadata import packages_distributions
 
 
@@ -96,7 +101,8 @@ def is_editable(plugin: Plugin) -> bool:
             )
 
     if not dist:
-        return "site-packages" not in plugin.module.__path__[0]
+        path = files(plugin.module)
+        return isinstance(path, Path) and "site-packages" not in path.parts
 
     # https://github.com/pdm-project/pdm/blob/fee1e6bffd7de30315e2134e19f9a6f58e15867c/src/pdm/utils.py#L361-L374
     if getattr(dist, "link_file", None) is not None:
