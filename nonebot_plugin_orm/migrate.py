@@ -285,7 +285,7 @@ class AlembicConfig(Config):
         else:
             version_locations = reversed(version_locations)
 
-            if main_version_location:
+            if main_version_location and main_version_location.exists():
                 version_locations = chain(
                     filter(methodcaller("is_dir"), main_version_location.iterdir()),
                     version_locations,
