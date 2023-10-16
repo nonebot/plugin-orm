@@ -8,7 +8,6 @@ from functools import wraps, partial
 from typing import Any, AsyncGenerator
 
 from nonebot.params import Depends
-from nonebot.log import LoguruHandler
 from nonebot.plugin import PluginMetadata
 import sqlalchemy.ext.asyncio as sa_asyncio
 from sqlalchemy.util import greenlet_spawn
@@ -19,8 +18,8 @@ from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from . import migrate
 from .model import Model
-from .utils import StreamToLogger
 from .config import Config, plugin_config
+from .utils import LoguruHandler, StreamToLogger
 
 if sys.version_info >= (3, 10):
     from typing import Annotated
@@ -205,7 +204,7 @@ def _init_table():
 def _init_logger():
     log_level = _driver.config.log_level
     if isinstance(log_level, str):
-        log_level = logging.getLevelName(log_level)
+        log_level = logger.level(log_level).no
 
     levels = {"alembic": log_level, "sqlalchemy": log_level}
     if not plugin_config.sqlalchemy_echo:
@@ -213,9 +212,9 @@ def _init_logger():
 
     handler = LoguruHandler()
     for name, level in levels.items():
-        logger = logging.getLogger(name)
-        logger.addHandler(handler)
-        logger.setLevel(level)
+        l = logging.getLogger(name)
+        l.addHandler(handler)
+        l.setLevel(level)
 
 
 _init_logger()

@@ -44,18 +44,40 @@ class _ReturnEq:
 return_eq = _ReturnEq()
 
 
+class LoguruHandler(logging.Handler):
+    def emit(self, record: logging.LogRecord):
+        try:
+            level = logger.level(record.levelname).name
+            if record.levelno <= logging.INFO:
+                level = {"DEBUG": "TRACE", "INFO": "DEBUG"}.get(level, level)
+        except ValueError:
+            level = record.levelno
+
+        frame, depth = sys._getframe(6), 6
+        while frame and frame.f_code.co_filename == logging.__file__:
+            frame = frame.f_back
+            depth += 1
+
+        logger.opt(depth=depth, exception=record.exc_info).log(
+            level, record.getMessage()
+        )
+
+
 class StreamToLogger(StringIO):
-    """Use for startup migrate only"""
+    """Use for startup migrate, AlembicConfig.print_stdout() only"""
 
     def __init__(self, level="INFO"):
         self._level = level
 
-    def write(self, buffer):
+    def write(self, buffer: str):
+        frame, depth = sys._getframe(3), 3
+        while frame and frame.f_code.co_name != "print_stdout":
+            frame = frame.f_back
+            depth += 1
+        depth += 1
+
         for line in buffer.rstrip().splitlines():
-            # depth 0: this function
-            # depth 1: click.echo()
-            # depth 2: click.secho()
-            logger.opt(depth=3).log(self._level, line.rstrip())
+            logger.opt(depth=depth).log(self._level, line.rstrip())
 
     def flush(self):
         pass
@@ -64,9 +86,9 @@ class StreamToLogger(StringIO):
 def return_progressbar(func: Callable[_P, Iterable[_T]]) -> Callable[_P, Iterable[_T]]:
     log_level = get_driver().config.log_level
     if isinstance(log_level, str):
-        log_level = logging.getLevelName(log_level)
+        log_level = logger.level(log_level).no
 
-    if log_level <= logging.INFO:
+    if log_level <= logger.level("INFO").no:
         return func
 
     @wraps(func)
