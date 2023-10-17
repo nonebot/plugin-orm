@@ -21,10 +21,10 @@ class Config(BaseModel, arbitrary_types_allowed=True):
     sqlalchemy_engine_options: Dict[str, Any] = {}
     sqlalchemy_session_options: Dict[str, Any] = {}
 
-    alembic_config: Union[str, os.PathLike[str], AlembicConfig] = ""
-    alembic_script_location: Union[str, os.PathLike[str]] = ""
+    alembic_config: Union[str, os.PathLike, AlembicConfig] = ""
+    alembic_script_location: Union[str, os.PathLike] = ""
     alembic_version_locations: Union[
-        str, os.PathLike[str], Dict[str, os.PathLike[str]], None
+        str, os.PathLike, Dict[str, os.PathLike], None
     ] = None
     alembic_context: Dict[str, Any] = {"render_as_batch": True}
     alembic_startup_check: bool = True
