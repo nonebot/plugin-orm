@@ -7,6 +7,7 @@ from warnings import catch_warnings, filterwarnings
 
 import click
 from alembic.script import Script
+from sqlalchemy.util import greenlet_spawn
 
 from . import migrate
 from .config import plugin_config
@@ -205,7 +206,7 @@ def stamp(*args, **kwargs) -> None:
 @orm.command()
 @click.argument("rev", default="current")
 @click.pass_obj
-def edit(*args, **kwargs):
+def edit(*args, **kwargs) -> None:
     """使用 $EDITOR 编辑修订文件。"""
     return migrate.edit(*args, **kwargs)
 
@@ -218,12 +219,14 @@ def ensure_version(*args, **kwargs) -> None:
     return migrate.ensure_version(*args, **kwargs)
 
 
-def main():
-    from . import _init_table, _init_engines
+def main(*args, **kwargs) -> None:
+    from . import _init_orm
 
-    _init_engines()
-    _init_table()
-    orm(prog_name="nb orm")
+    if not (args or kwargs):
+        kwargs["prog_name"] = "nb orm"
+
+    _init_orm()
+    orm(*args, **kwargs)
 
 
 if __name__ == "__main__":

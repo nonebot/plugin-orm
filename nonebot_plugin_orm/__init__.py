@@ -84,14 +84,8 @@ _driver = get_driver()
 
 
 @_driver.on_startup
-async def init_orm():
-    global _session_factory
-
-    _init_engines()
-    _init_table()
-    _session_factory = sa_asyncio.async_sessionmaker(
-        _engines[""], binds=_binds, **plugin_config.sqlalchemy_session_options
-    )
+async def init_orm() -> None:
+    _init_orm()
 
     with migrate.AlembicConfig(stdout=StreamToLogger()) as alembic_config:
         if plugin_config.alembic_startup_check:
@@ -100,6 +94,16 @@ async def init_orm():
             logger.warning("跳过启动检查，直接创建所有表并标记数据库为最新修订版本")
             await migrate._upgrade_fast(alembic_config)
             await greenlet_spawn(migrate.stamp, alembic_config)
+
+
+def _init_orm():
+    global _session_factory
+
+    _init_engines()
+    _init_table()
+    _session_factory = sa_asyncio.async_sessionmaker(
+        _engines[""], binds=_binds, **plugin_config.sqlalchemy_session_options
+    )
 
 
 @wraps(lambda: None)  # NOTE: for dependency injection
