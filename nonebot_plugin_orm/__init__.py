@@ -17,8 +17,7 @@ from sqlalchemy import URL, Table, MetaData, make_url
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from . import migrate
-from .model import Model
-from .config import Config, plugin_config
+from .config import Config
 from .utils import LoguruHandler, StreamToLogger
 
 if sys.version_info >= (3, 10):
@@ -221,9 +220,9 @@ def _init_logger():
         l.setLevel(level)
 
 
-_init_logger()
-
 from .sql import *
 from .model import *
 from .config import *
 from .migrate import *
+
+_init_logger()
