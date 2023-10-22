@@ -5,16 +5,21 @@ import json
 import logging
 from io import StringIO
 from pathlib import Path
-from typing import TypeVar
 from contextlib import suppress
 from functools import wraps, lru_cache
+from typing_extensions import Annotated
+from dataclasses import field, dataclass
+from typing import Any, TypeVar, NamedTuple
 from collections.abc import Callable, Iterable
+from inspect import Parameter, Signature, isclass
 from importlib.metadata import Distribution, PackageNotFoundError, distribution
 
 import click
 from nonebot.plugin import Plugin
 from nonebot.params import Depends
 from nonebot import logger, get_driver
+from pydantic.typing import get_args, get_origin
+from sqlalchemy.sql.selectable import ExecutableReturnsRows
 
 if sys.version_info >= (3, 9):
     from importlib.resources import files
@@ -81,6 +86,78 @@ class StreamToLogger(StringIO):
 
     def flush(self):
         pass
+
+
+@dataclass
+class Option:
+    stream: bool = True
+    scalars: bool = False
+    result: _methodcall | None = None
+    calls: list[_methodcall] = field(default_factory=list)
+
+
+class _methodcall(NamedTuple):
+    name: str
+    args: tuple
+    kwargs: dict[str, Any]
+
+
+def methodcall(name: str, args: tuple = (), kwargs: dict[str, Any] = {}) -> _methodcall:
+    return _methodcall(name, args, kwargs)
+
+
+def compile_dependency(statement: ExecutableReturnsRows, option: Option) -> Any:
+    from . import async_scoped_session
+
+    async def dependency(*, __session: async_scoped_session, **params: Any):
+        if option.stream:
+            result = await __session.stream(statement, params)
+        else:
+            result = await __session.execute(statement, params)
+
+        for call in option.calls:
+            result = getattr(result, call.name)(*call.args, **call.kwargs)
+
+        if option.scalars:
+            result = result.scalars()
+
+        if call := option.result:
+            result = getattr(result, call.name)(*call.args, **call.kwargs)
+
+            if option.stream:
+                result = await result
+
+        return result
+
+    dependency.__signature__ = Signature(
+        [
+            Parameter(
+                "__session", Parameter.KEYWORD_ONLY, annotation=async_scoped_session
+            ),
+            *(
+                Parameter(name, Parameter.KEYWORD_ONLY, default=depends)
+                for name, depends in statement.compile().params.items()
+                if isinstance(depends, DependsInner)
+            ),
+        ]
+    )
+
+    return Depends(dependency)
+
+
+def toclass(cls: Any) -> type:
+    if isclass(cls):
+        return cls
+
+    origin, args = get_origin(cls), get_args(cls)
+
+    if origin is None:
+        raise TypeError(f"{cls!r} is not a class or a generic type")
+
+    if origin is Annotated:
+        return toclass(args[0])
+
+    return origin
 
 
 def return_progressbar(func: Callable[_P, Iterable[_T]]) -> Callable[_P, Iterable[_T]]:

@@ -222,6 +222,7 @@ def _init_logger():
 
 from .sql import *
 from .model import *
+from .param import *
 from .config import *
 from .migrate import *
 
