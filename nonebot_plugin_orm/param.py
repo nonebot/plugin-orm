@@ -1,121 +1,190 @@
 from __future__ import annotations
 
 import sys
-from typing import Any, Union
-from inspect import Parameter, isclass
+from itertools import repeat
+from inspect import Parameter
+from dataclasses import dataclass
 from typing_extensions import Annotated
-from collections.abc import Iterator, Sequence, AsyncIterator
+from typing import Any, Tuple, Iterator, Sequence, AsyncIterator, cast
 
+from nonebot.rule import Rule
 from nonebot.matcher import Matcher
+from pydantic.fields import FieldInfo
 from nonebot.dependencies import Param
+from nonebot.permission import Permission
 from pydantic.typing import get_args, get_origin
 from nonebot.params import DependParam, DefaultParam
 from sqlalchemy import Row, Result, ScalarResult, select
+from sqlalchemy.sql.selectable import ExecutableReturnsRows
 from sqlalchemy.ext.asyncio import AsyncResult, AsyncScalarResult
 
 from .model import Model
-from .utils import Option, toclass, methodcall, compile_dependency
+from .utils import Option, methodcaller, compile_dependency, generic_issubclass
 
-if sys.version_info >= (3, 10):
-    from types import NoneType, UnionType
-else:
-    NoneType = type(None)
-    UnionType = None
-
-
-def parse_model_annotation(
-    anno: Any,
-) -> tuple[tuple[type[Model], ...], Option] | tuple[None, None]:
-    if isclass(anno) and issubclass(anno, Model):
-        return (anno,), Option(scalars=True, result=methodcall("one_or_none"))
-
-    origin, args = get_origin(anno), get_args(anno)
-
-    if not (origin and args):
-        return (None, None)
-
-    if origin is Annotated:
-        return parse_model_annotation(args[0])
-
-    if origin in (UnionType, Union) and len(args) == 2:
-        if args[0] is NoneType:
-            return parse_model_annotation(args[1])
-        elif args[1] is NoneType:
-            return parse_model_annotation(args[0])
-
-    if not isclass(origin):
-        return (None, None)
-
-    if origin is Row:
-        origin, args = tuple, get_args(args[0])
-
-    if origin is tuple and all(issubclass(arg, Model) for arg in map(toclass, args)):
-        return args, Option(result=methodcall("one_or_none"))
-
-    models, option = parse_model_annotation(args[0])
-    if not (models and option):
-        return (None, None)
-
-    if option.result == methodcall("all"):
-        if issubclass(Iterator, origin):
-            return models, Option(False, option.scalars, methodcall("partitions"))
-
-        if issubclass(AsyncIterator, origin):
-            return models, Option(True, option.scalars, methodcall("partitions"))
-
-    if option.result != methodcall("one_or_none"):
-        return (None, None)
-
-    if (
-        (not option.scalars and origin is Result)
-        or (option.scalars and origin is ScalarResult)
-        or issubclass(Iterator, origin)
-    ):
-        return models, Option(False, option.scalars)
-
-    if (
-        (not option.scalars and origin is AsyncResult)
-        or (option.scalars and origin is AsyncScalarResult)
-        or issubclass(AsyncIterator, origin)
-    ):
-        return models, Option(scalars=option.scalars)
-
-    if issubclass(Sequence, origin):
-        return models, Option(True, option.scalars, methodcall("all"))
-
-    return (None, None)
+__all__ = (
+    "SQLDepends",
+    "ORMParam",
+)
 
 
-class ModelParam(DependParam):
+PATTERNS = {
+    AsyncIterator[Sequence[Row[Tuple[Any, ...]]]]: Option(
+        True,
+        False,
+        methodcaller("partitions"),
+    ),
+    AsyncIterator[Sequence[Tuple[Any, ...]]]: Option(
+        True,
+        False,
+        methodcaller("partitions"),
+    ),
+    AsyncIterator[Sequence[Any]]: Option(
+        True,
+        True,
+        methodcaller("partitions"),
+    ),
+    Iterator[Sequence[Row[Tuple[Any, ...]]]]: Option(
+        False,
+        False,
+        methodcaller("partitions"),
+    ),
+    Iterator[Sequence[Tuple[Any, ...]]]: Option(
+        False,
+        False,
+        methodcaller("partitions"),
+    ),
+    Iterator[Sequence[Any]]: Option(
+        False,
+        True,
+        methodcaller("partitions"),
+    ),
+    AsyncResult[Tuple[Any, ...]]: Option(
+        True,
+        False,
+    ),
+    AsyncScalarResult[Any]: Option(
+        True,
+        True,
+    ),
+    Result[Tuple[Any, ...]]: Option(
+        False,
+        False,
+    ),
+    ScalarResult[Any]: Option(
+        False,
+        True,
+    ),
+    AsyncIterator[Row[Tuple[Any, ...]]]: Option(
+        True,
+        False,
+    ),
+    Iterator[Row[Tuple[Any, ...]]]: Option(
+        False,
+        False,
+    ),
+    Sequence[Row[Tuple[Any, ...]]]: Option(
+        True,
+        False,
+        methodcaller("all"),
+    ),
+    Sequence[Tuple[Any, ...]]: Option(
+        True,
+        False,
+        methodcaller("all"),
+    ),
+    Sequence[Any]: Option(
+        True,
+        True,
+        methodcaller("all"),
+    ),
+    Tuple[Any, ...]: Option(
+        True,
+        False,
+        methodcaller("one_or_none"),
+    ),
+    Any: Option(
+        True,
+        True,
+        methodcaller("one_or_none"),
+    ),
+}
+
+
+@dataclass
+class SQLDependsInner:
+    dependency: ExecutableReturnsRows
+
+    if sys.version_info >= (3, 10):
+        from dataclasses import KW_ONLY
+
+        _: KW_ONLY
+
+    use_cache: bool = True
+    validate: bool | FieldInfo = False
+
+
+def SQLDepends(
+    dependency: ExecutableReturnsRows,
+    *,
+    use_cache: bool = True,
+    validate: bool | FieldInfo = False,
+) -> Any:
+    return SQLDependsInner(dependency, use_cache=use_cache, validate=validate)
+
+
+class ORMParam(DependParam):
     @classmethod
     def _check_param(
         cls, param: Parameter, allow_types: tuple[type[Param], ...]
     ) -> Param | None:
-        models, option = parse_model_annotation(param.annotation)
+        type_annotation, depends_inner = param.annotation, None
+        if get_origin(param.annotation) is Annotated:
+            type_annotation, *extra_args = get_args(param.annotation)
+            depends_inner = next(
+                (x for x in reversed(extra_args) if isinstance(x, SQLDependsInner)),
+                None,
+            )
 
-        if not (models and option):
+        if isinstance(param.default, SQLDependsInner):
+            depends_inner = param.default
+
+        for pattern, option in PATTERNS.items():
+            if models := generic_issubclass(pattern, type_annotation):
+                break
+        else:
+            models, option = None, Option()
+
+        if not isinstance(models, tuple):
+            models = (models,)
+
+        if depends_inner is not None:
+            dependency = compile_dependency(depends_inner.dependency, option)
+        elif all(map(issubclass, models, repeat(Model))):
+            models = cast(Tuple[Model, ...], models)
+            dependency = compile_dependency(
+                select(*models).where(
+                    *(
+                        getattr(model, name) == param.default
+                        for model in models
+                        for name, param in model.__signature__.parameters.items()
+                    )
+                ),
+                option,
+            )
+        else:
             return
 
-        stat = select(*models).where(
-            *(
-                getattr(model, name) == param.default
-                for model in models
-                for name, param in model.__signature__.parameters.items()
-            )
-        )
-
-        return super()._check_param(
-            param.replace(default=compile_dependency(stat, option)), allow_types
-        )
+        return super()._check_param(param.replace(default=dependency), allow_types)
 
     @classmethod
-    def _check_parameterless(
-        cls, value: Any, allow_types: tuple[type[Param], ...]
-    ) -> Param | None:
+    def _check_parameterless(cls, *_) -> Param | None:
         return
 
 
+for cls in (Rule, Permission):
+    cls.HANDLER_PARAM_TYPES.insert(-1, ORMParam)
+
 Matcher.HANDLER_PARAM_TYPES = Matcher.HANDLER_PARAM_TYPES[:-1] + (
-    ModelParam,
+    ORMParam,
     DefaultParam,
 )

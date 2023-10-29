@@ -5,11 +5,12 @@ import json
 import logging
 from io import StringIO
 from pathlib import Path
+from itertools import repeat
 from contextlib import suppress
+from typing import Any, TypeVar
 from functools import wraps, lru_cache
 from typing_extensions import Annotated
 from dataclasses import field, dataclass
-from typing import Any, TypeVar, NamedTuple
 from collections.abc import Callable, Iterable
 from inspect import Parameter, Signature, isclass
 from importlib.metadata import Distribution, PackageNotFoundError, distribution
@@ -18,8 +19,14 @@ import click
 from nonebot.plugin import Plugin
 from nonebot.params import Depends
 from nonebot import logger, get_driver
-from pydantic.typing import get_args, get_origin
 from sqlalchemy.sql.selectable import ExecutableReturnsRows
+from pydantic.typing import (
+    get_args,
+    is_union,
+    get_origin,
+    is_literal_type,
+    all_literal_values,
+)
 
 if sys.version_info >= (3, 9):
     from importlib.resources import files
@@ -92,18 +99,27 @@ class StreamToLogger(StringIO):
 class Option:
     stream: bool = True
     scalars: bool = False
-    result: _methodcall | None = None
-    calls: list[_methodcall] = field(default_factory=list)
+    result: methodcaller | None = None
+    calls: list[methodcaller] = field(default_factory=list)
 
 
-class _methodcall(NamedTuple):
-    name: str
-    args: tuple
-    kwargs: dict[str, Any]
+class methodcaller:
+    __slots__ = ("_name", "_args", "_kwargs")
 
+    def __init__(self, name, /, *args, **kwargs):
+        self._name = name
+        if not isinstance(self._name, str):
+            raise TypeError("method name must be a string")
+        self._args = args
+        self._kwargs = kwargs
 
-def methodcall(name: str, args: tuple = (), kwargs: dict[str, Any] = {}) -> _methodcall:
-    return _methodcall(name, args, kwargs)
+    def __call__(self, obj):
+        return getattr(obj, self._name)(*self._args, **self._kwargs)
+
+    def __eq__(self, value: object, /) -> bool:
+        return isinstance(value, methodcaller) and all(
+            getattr(self, attr) == getattr(value, attr) for attr in self.__slots__
+        )
 
 
 def compile_dependency(statement: ExecutableReturnsRows, option: Option) -> Any:
@@ -116,13 +132,13 @@ def compile_dependency(statement: ExecutableReturnsRows, option: Option) -> Any:
             result = await __session.execute(statement, params)
 
         for call in option.calls:
-            result = getattr(result, call.name)(*call.args, **call.kwargs)
+            result = call(result)
 
         if option.scalars:
             result = result.scalars()
 
         if call := option.result:
-            result = getattr(result, call.name)(*call.args, **call.kwargs)
+            result = call(result)
 
             if option.stream:
                 result = await result
@@ -145,19 +161,51 @@ def compile_dependency(statement: ExecutableReturnsRows, option: Option) -> Any:
     return Depends(dependency)
 
 
-def toclass(cls: Any) -> type:
-    if isclass(cls):
+def generic_issubclass(scls: Any, cls: Any) -> Any:
+    if cls is Any:
+        return True
+
+    if scls is Any:
         return cls
 
-    origin, args = get_origin(cls), get_args(cls)
+    if isclass(scls) and (isclass(cls) or isinstance(cls, tuple)):
+        return issubclass(scls, cls)
 
-    if origin is None:
-        raise TypeError(f"{cls!r} is not a class or a generic type")
+    scls_origin, scls_args = get_origin(scls) or scls, get_args(scls)
+    cls_origin, cls_args = get_origin(cls) or cls, get_args(cls)
 
-    if origin is Annotated:
-        return toclass(args[0])
+    if scls_origin is tuple and cls_origin is tuple:
+        if len(scls_args) == 2 and scls_args[1] is Ellipsis:
+            return generic_issubclass(scls_args[0], cls_args)
 
-    return origin
+        if len(cls_args) == 2 and cls_args[1] is Ellipsis:
+            return all(map(generic_issubclass, scls_args, repeat(cls_args[0])))
+
+    if scls_origin is Annotated:
+        return generic_issubclass(scls_args[0], cls)
+    if cls_origin is Annotated:
+        return generic_issubclass(scls, cls_args[0])
+
+    if is_union(scls_origin):
+        return all(map(generic_issubclass, scls_args, repeat(cls)))
+    if is_union(cls_origin):
+        return generic_issubclass(scls, cls_args)
+
+    if is_literal_type(scls) and is_literal_type(cls):
+        return set(all_literal_values(scls)) <= set(all_literal_values(cls))
+
+    try:
+        if not issubclass(scls_origin, cls_origin):
+            return False
+    except TypeError:
+        return False
+
+    if len(scls_args) == 1 and len(cls_args) <= 1:
+        return generic_issubclass(scls_args[0], (cls_args or (Any,))[0])
+
+    return len(scls_args) == len(cls_args) and all(
+        map(generic_issubclass, scls_args, cls_args)
+    )
 
 
 def return_progressbar(func: Callable[_P, Iterable[_T]]) -> Callable[_P, Iterable[_T]]:
