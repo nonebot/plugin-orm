@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import sys
 from inspect import Parameter, Signature
-from typing import TYPE_CHECKING, Any, ClassVar
+from typing import TYPE_CHECKING, Any, Callable, ClassVar, cast
 
 from sqlalchemy import Table, MetaData
+from pydantic.dataclasses import dataclass
 from nonebot import get_plugin_by_module_name
 from pydantic.typing import get_args, get_origin
-from sqlalchemy.orm import Mapped, DeclarativeBase
+from sqlalchemy.orm import Mapped, DeclarativeBase, MappedAsDataclass
 
 from .utils import DependsInner, get_annotations
 
@@ -28,7 +29,11 @@ NAMING_CONVENTION = {
 }
 
 
-class Model(DeclarativeBase):
+class Model(
+    MappedAsDataclass,
+    DeclarativeBase,
+    dataclass_callable=cast(Callable[..., type], dataclass),
+):
     metadata = MetaData(naming_convention=NAMING_CONVENTION)
 
     if TYPE_CHECKING:
