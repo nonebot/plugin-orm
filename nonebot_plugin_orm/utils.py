@@ -181,7 +181,6 @@ def return_progressbar(func: Callable[_P, Iterable[_T]]) -> Callable[_P, Iterabl
 _packages_distributions = lru_cache(None)(packages_distributions)
 
 
-# https://github.com/pdm-project/pdm/blob/fee1e6bffd7de30315e2134e19f9a6f58e15867c/src/pdm/utils.py#L361-L374
 def is_editable(plugin: Plugin) -> bool:
     """Check if the distribution is installed in editable mode"""
     while plugin.parent_plugin:
@@ -193,11 +192,13 @@ def is_editable(plugin: Plugin) -> bool:
         with suppress(PackageNotFoundError):
             dist = distribution(plugin.metadata.name)
 
-    if not dist:
-        with suppress(KeyError, IndexError):
-            dist = distribution(
-                _packages_distributions()[plugin.module_name.split(".")[0]][0]
-            )
+    # XXX: 有些包有不正确的 top_level.txt (例如: kiwisolver 的 src),
+    #      导致下面的代码有可能得出错误的结果. 参见: https://github.com/nucleic/kiwi/issues/169
+    # if not dist:
+    #     with suppress(KeyError, IndexError):
+    #         dist = distribution(
+    #             _packages_distributions()[plugin.module_name.split(".")[0]][0]
+    #         )
 
     if not dist:
         path = files(plugin.module)
