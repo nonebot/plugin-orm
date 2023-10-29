@@ -89,7 +89,7 @@ def init(*args, **kwargs) -> None:
 @orm.command()
 @click.option("-m", "--message", help="描述")
 @click.option("--sql", is_flag=True, help="以 SQL 的形式输出修订脚本")
-@click.option("--head", default="head", help="基准版本")
+@click.option("--head", help="基准版本")
 @click.option("--splice", is_flag=True, help="允许非头部修订作为基准版本")
 @click.option("--branch-label", help="分支标签")
 @click.option(
@@ -128,11 +128,6 @@ def merge(*args, **kwargs) -> Iterable[Script]:
 @click.argument("revision", required=False)
 @click.option("--sql", is_flag=True, help="以 SQL 的形式输出修订脚本")
 @click.option("--tag", help="一个任意的字符串, 可在自定义的 env.py 中使用")
-@click.option(
-    "--fast",
-    is_flag=True,
-    help="快速升级到最新版本，不运行修订脚本，直接创建当前的表（只应该在数据库为空、修订较多且只有表结构更改时使用）",
-)
 @click.pass_obj
 def upgrade(*args, **kwargs) -> None:
     """升级到较新版本。"""
@@ -147,6 +142,14 @@ def upgrade(*args, **kwargs) -> None:
 def downgrade(*args, **kwargs) -> None:
     """回退到先前版本。"""
     return migrate.downgrade(*args, **kwargs)
+
+
+@orm.command()
+@click.argument("revision", required=False)
+@click.pass_obj
+def sync(*args, **kwargs) -> None:
+    """同步数据库模式 (仅用于开发)。"""
+    return migrate.sync(*args, **kwargs)
 
 
 @orm.command()

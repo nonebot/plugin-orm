@@ -6,24 +6,25 @@ import shutil
 from pathlib import Path
 from itertools import chain
 from argparse import Namespace
-from operator import methodcaller
 from tempfile import TemporaryDirectory
 from configparser import DuplicateSectionError
 from typing_extensions import ParamSpec, Concatenate
-from typing import Any, Tuple, TextIO, TypeVar, Callable, cast
+from contextlib import ExitStack, suppress, contextmanager
 from collections.abc import Mapping, Iterable, Sequence, Generator
-from contextlib import ExitStack, AsyncExitStack, suppress, contextmanager
+from typing import Any, Set, Tuple, TextIO, TypeVar, Callable, cast
 
 import click
+from nonebot import logger
 from alembic.config import Config
+from sqlalchemy.util import asbool
+from sqlalchemy import MetaData, Connection
 from alembic.operations.ops import UpgradeOps
 from alembic.util.editor import open_in_editor
+from alembic.runtime.migration import StampStep
 from alembic.script import Script, ScriptDirectory
-from sqlalchemy.util import asbool, await_fallback
-from alembic.util.messaging import obfuscate_url_pw
 from alembic.autogenerate.api import RevisionContext
 from alembic.util.langhelpers import rev_id as _rev_id
-from nonebot import logger, get_plugin, get_loaded_plugins
+from alembic.migration import RevisionStep, MigrationContext
 from alembic.runtime.environment import EnvironmentContext, ProcessRevisionDirectiveFn
 
 from .utils import is_editable, return_progressbar
@@ -45,6 +46,7 @@ __all__ = (
     "merge",
     "upgrade",
     "downgrade",
+    "sync",
     "show",
     "history",
     "heads",
@@ -225,7 +227,7 @@ class AlembicConfig(Config):
             )
 
     def _init_version_locations(self) -> None:
-        from . import plugin_config
+        from . import _plugins, plugin_config
 
         alembic_version_locations = plugin_config.alembic_version_locations
 
@@ -248,13 +250,13 @@ class AlembicConfig(Config):
         temp_dir = Path(self._temp_dir.name) if self._temp_dir else None
         version_locations = {}
 
-        for plugin in get_loaded_plugins():
-            if not plugin.metadata or not (
+        for plugin in _plugins.values():
+            if plugin.metadata and (
                 version_module := plugin.metadata.extra.get("orm_version_location")
             ):
-                continue
-
-            version_location = files(version_module)
+                version_location = files(version_module)
+            else:
+                version_location = files(plugin.module) / "migrations"
 
             if is_editable(plugin) and isinstance(version_location, Path):
                 self._plugin_version_locations[plugin.name] = version_location
@@ -278,17 +280,13 @@ class AlembicConfig(Config):
                 with suppress(FileNotFoundError):
                     shutil.copytree(src, temp_dir / dst, dirs_exist_ok=True)
 
-            version_locations = (
-                temp_dir,
-                *filter(methodcaller("is_dir"), temp_dir.iterdir()),
-            )
+            version_locations = (temp_dir, *map(temp_dir.joinpath, _plugins))
         else:
             version_locations = reversed(version_locations)
 
             if main_version_location and main_version_location.exists():
                 version_locations = chain(
-                    filter(methodcaller("is_dir"), main_version_location.iterdir()),
-                    version_locations,
+                    map(main_version_location.joinpath, _plugins), version_locations
                 )
 
         pathsep = _SPLIT_ON_PATH[self.get_main_option("version_path_separator")]
@@ -366,7 +364,7 @@ def revision(
     config: AlembicConfig,
     message: str | None = None,
     sql: bool | None = False,
-    head: str = "head",
+    head: str | None = None,
     splice: bool = False,
     branch_label: str | None = None,
     version_path: Path | None = None,
@@ -380,7 +378,7 @@ def revision(
         config: `AlembicConfig` 对象
         message: 修订的描述
         sql: 是否以 SQL 的形式输出修订脚本
-        head: 修订的基准版本
+        head: 修订的基准版本, 提供了 branch_label 时默认为 'base', 否则默认为 'head'
         splice: 是否将修订作为一个新的分支的头; 当 `head` 不是一个分支的头时, 此项必须为 `True`
         branch_label: 修订的分支标签
         version_path: 存放修订文件的目录
@@ -388,6 +386,11 @@ def revision(
         depends_on: 修订的依赖
         process_revision_directives: 修订的处理函数, 参见: `alembic.EnvironmentContext.configure.process_revision_directives`
     """
+    from . import _plugins
+
+    if head is None:
+        head = "base" if branch_label else "head"
+
     if version_path:
         version_location = config.get_main_option("version_locations")
         pathsep = _SPLIT_ON_PATH[config.get_main_option("version_path_separator")]
@@ -397,21 +400,16 @@ def revision(
         logger.warning(
             f'临时将目录 "{version_path}" 添加到版本目录中，请稍后将其添加到 ALEMBIC_VERSION_LOCATIONS 中'
         )
-    elif (
-        branch_label
-        and (plugin := get_plugin(branch_label))
-        and plugin.metadata
-        and plugin.metadata.extra.get("orm_version_location")
-    ):
+    elif branch_label in _plugins:
         version_path = (
             Path(cast(TemporaryDirectory, config._temp_dir).name) / branch_label
         )
 
-    script_directory = ScriptDirectory.from_config(config)
+    script = ScriptDirectory.from_config(config)
 
     revision_context = RevisionContext(
         config,
-        script_directory,
+        script,
         dict(
             message=message,
             autogenerate=not sql,
@@ -428,29 +426,31 @@ def revision(
 
     if sql:
 
-        def retrieve_migrations(rev, context):
+        def retrieve_migrations(
+            rev: tuple[str, ...], context: MigrationContext
+        ) -> tuple[()]:
             revision_context.run_no_autogenerate(rev, context)
             return ()
 
     else:
 
-        def retrieve_migrations(rev, context):
-            if set(script_directory.get_revisions(rev)) != set(
-                script_directory.get_revisions("heads")
-            ):
+        def retrieve_migrations(
+            rev: tuple[str, ...], context: MigrationContext
+        ) -> tuple[()]:
+            if set(script.get_revisions(rev)) != set(script.get_revisions("heads")):
                 raise click.UsageError("目标数据库未更新到最新修订")
             revision_context.run_autogenerate(rev, context)
             return ()
 
     with EnvironmentContext(
         config,
-        script_directory,
+        script,
         fn=retrieve_migrations,
         as_sql=sql,
         template_args=revision_context.template_args,
         revision_context=revision_context,
     ):
-        script_directory.run_env()
+        script.run_env()
 
     return filter(None, revision_context.generate_scripts())
 
@@ -462,7 +462,7 @@ def check(config: AlembicConfig) -> None:
         config: `AlembicConfig` 对象
     """
 
-    script_directory = ScriptDirectory.from_config(config)
+    script = ScriptDirectory.from_config(config)
 
     command_args = dict(
         message=None,
@@ -477,27 +477,27 @@ def check(config: AlembicConfig) -> None:
     )
     revision_context = RevisionContext(
         config,
-        script_directory,
+        script,
         command_args,
     )
 
-    def retrieve_migrations(rev, context):
-        if set(script_directory.get_revisions(rev)) != set(
-            script_directory.get_revisions("heads")
-        ):
+    def retrieve_migrations(
+        rev: tuple[str, ...], context: MigrationContext
+    ) -> tuple[()]:
+        if set(script.get_revisions(rev)) != set(script.get_revisions("heads")):
             raise click.UsageError("目标数据库未更新到最新修订")
         revision_context.run_autogenerate(rev, context)
         return ()
 
     with EnvironmentContext(
         config,
-        script_directory,
+        script,
         fn=retrieve_migrations,
         as_sql=False,
         template_args=revision_context.template_args,
         revision_context=revision_context,
     ):
-        script_directory.run_env()
+        script.run_env()
 
     # the revision_context now has MigrationScript structure(s) present.
 
@@ -527,7 +527,7 @@ def merge(
         rev_id: 修订的 ID
     """
 
-    script_directory = ScriptDirectory.from_config(config)
+    script = ScriptDirectory.from_config(config)
     template_args = {"config": config}
 
     environment = asbool(config.get_main_option("revision_environment"))
@@ -535,14 +535,14 @@ def merge(
     if environment:
         with EnvironmentContext(
             config,
-            script_directory,
+            script,
             fn=lambda *_: (),
             as_sql=False,
             template_args=template_args,
         ):
-            script_directory.run_env()
+            script.run_env()
 
-    script = script_directory.generate_revision(
+    sc = script.generate_revision(
         rev_id or _rev_id(),
         message,
         refresh=True,
@@ -550,7 +550,7 @@ def merge(
         branch_labels=branch_label,
         **template_args,  # type: ignore[arg-type]
     )
-    return (script,) if script else ()
+    return (sc,) if sc else ()
 
 
 def upgrade(
@@ -558,7 +558,6 @@ def upgrade(
     revision: str | None = None,
     sql: bool = False,
     tag: str | None = None,
-    fast: bool = False,
 ) -> None:
     """升级到较新版本。
 
@@ -567,7 +566,6 @@ def upgrade(
         revision: 目标修订
         sql: 是否以 SQL 的形式输出修订脚本
         tag: 一个任意的字符串, 可在自定义的 `env.py` 中通过 `alembic.EnvironmentContext.get_tag_argument` 获得
-        fast: 是否快速升级到最新版本，不运行修订脚本，直接创建当前的表（只应该在数据库为空、修订较多且只有表结构更改时使用）
     """
 
     script = ScriptDirectory.from_config(config)
@@ -582,15 +580,8 @@ def upgrade(
         starting_rev, revision = revision.split(":", 2)
 
     @return_progressbar
-    def upgrade(rev, _):
-        nonlocal fast
-
-        if fast and revision in {"head", "heads"} and not script.get_all_current(rev):
-            await_fallback(_upgrade_fast(config))
-            return script._stamp_revs(revision, rev)
-        else:
-            fast = False
-            return script._upgrade_revs(revision, rev)  # type: ignore
+    def upgrade(rev: tuple[str, ...], _) -> list[RevisionStep]:
+        return script._upgrade_revs(revision, rev)  # type: ignore
 
     with EnvironmentContext(
         config,
@@ -602,13 +593,6 @@ def upgrade(
         tag=tag,
     ):
         script.run_env()
-
-
-async def _upgrade_fast(config: AlembicConfig):
-    async with AsyncExitStack() as stack:
-        for name, engine in config.attributes["engines"].items():
-            connection = await stack.enter_async_context(engine.begin())
-            await connection.run_sync(config.attributes["metadatas"][name].create_all)
 
 
 def downgrade(
@@ -638,8 +622,8 @@ def downgrade(
         )
 
     @return_progressbar
-    def downgrade(rev, _):
-        return script._downgrade_revs(revision, rev)
+    def downgrade(rev: tuple[str, ...], _) -> list[RevisionStep]:
+        return script._downgrade_revs(revision, rev)  # type: ignore
 
     with EnvironmentContext(
         config,
@@ -649,6 +633,65 @@ def downgrade(
         starting_rev=starting_rev,
         destination_rev=revision,
         tag=tag,
+    ):
+        script.run_env()
+
+
+def sync(config: Config, revision: str | None = None):
+    """同步数据库模式 (仅用于开发)。
+
+    参数:
+        config: `AlembicConfig` 对象
+        revision: 目标修订, 如果不提供则与当前模型同步
+    """
+    script = ScriptDirectory.from_config(config)
+
+    command_args = dict(
+        message=None,
+        autogenerate=True,
+        sql=False,
+        head="head",
+        splice=False,
+        branch_label=None,
+        version_path=None,
+        rev_id=None,
+        depends_on=None,
+    )
+    revision_context = RevisionContext(
+        config,
+        script,
+        command_args,
+    )
+
+    def retrieve_migrations(
+        rev: tuple[str, ...], context: MigrationContext
+    ) -> list[RevisionStep] | tuple[()]:
+        if not revision:
+            revision_context.run_autogenerate(rev, context)
+            migration_script = revision_context.generated_revisions[-1]
+            diffs = cast(UpgradeOps, migration_script.upgrade_ops).as_diffs()
+            if not diffs:
+                return ()
+
+        metadata = MetaData()
+        assert context.connection
+        metadata.reflect(context.connection)
+        metadata.drop_all(context.connection)
+
+        if revision:
+            context._ensure_version_table()
+            return script._upgrade_revs(revision, "base")
+
+        context.opts["target_metadata"].create_all(context.connection)
+        return ()
+
+    with EnvironmentContext(
+        config,
+        script,
+        fn=retrieve_migrations,
+        as_sql=False,
+        template_args=revision_context.template_args,
+        revision_context=revision_context,
     ):
         script.run_env()
 
@@ -671,7 +714,7 @@ def show(config: AlembicConfig, revs: str | Sequence[str] = "current") -> None:
         ):
             script.run_env()
 
-    for sc in cast("tuple[Script]", script.get_revisions(revs)):
+    for sc in cast(Tuple[Script], script.get_revisions(revs)):
         config.print_stdout(sc.log_entry)
 
 
@@ -759,7 +802,7 @@ def heads(
     else:
         heads = script.get_revisions(script.get_heads())
 
-    for rev in cast("tuple[Script]", heads):
+    for rev in cast(Tuple[Script], heads):
         config.print_stdout(
             rev.cmd_format(verbose, include_branches=True, tree_indicators=False)
         )
@@ -803,14 +846,14 @@ def current(config: AlembicConfig, verbose: bool = False) -> None:
 
     script = ScriptDirectory.from_config(config)
 
-    def display_version(rev, context):
+    def display_version(rev: tuple[str, ...], context: MigrationContext) -> tuple[()]:
         if verbose:
             config.print_stdout(
                 "Current revision(s) for %s:",
-                obfuscate_url_pw(context.connection.engine.url),
+                cast(Connection, context.connection).engine.url.render_as_string(),
             )
-        for rev in cast("set[Script]", script.get_all_current(rev)):
-            config.print_stdout(rev.cmd_format(verbose))
+        for sc in cast(Set[Script], script.get_all_current(rev)):
+            config.print_stdout(sc.cmd_format(verbose))
 
         return ()
 
@@ -856,7 +899,7 @@ def stamp(
     else:
         destination_revs = revisions
 
-    def do_stamp(rev, _):
+    def do_stamp(rev: tuple[str, ...], _) -> list[StampStep]:
         return script._stamp_revs(destination_revs, rev)
 
     with EnvironmentContext(
@@ -885,11 +928,11 @@ def edit(config: AlembicConfig, rev: str = "current") -> None:
 
     if rev == "current":
 
-        def edit_current(rev, _):
+        def edit_current(rev: tuple[str, ...], _) -> tuple[()]:
             if not rev:
                 raise click.UsageError("当前没有修订")
 
-            for sc in cast("tuple[Script]", script.get_revisions(rev)):
+            for sc in cast(Tuple[Script], script.get_revisions(rev)):
                 script_path = config.move_script(sc)
                 open_in_editor(str(script_path))
 
@@ -918,7 +961,7 @@ def ensure_version(config: AlembicConfig, sql: bool = False) -> None:
 
     script = ScriptDirectory.from_config(config)
 
-    def do_ensure_version(rev, context):
+    def do_ensure_version(_, context: MigrationContext) -> tuple[()]:
         context._ensure_version_table()
         return ()
 

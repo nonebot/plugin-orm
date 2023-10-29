@@ -4,17 +4,17 @@ import sys
 import logging
 from asyncio import gather
 from operator import methodcaller
-from functools import wraps, partial
 from typing import Any, AsyncGenerator
+from functools import wraps, partial, lru_cache
 
 from nonebot.params import Depends
-from nonebot.plugin import PluginMetadata
-import sqlalchemy.ext.asyncio as sa_asyncio
+import sqlalchemy.ext.asyncio as sa_async
 from sqlalchemy.util import greenlet_spawn
 from nonebot.matcher import current_matcher
-from nonebot import logger, require, get_driver
+from nonebot.plugin import Plugin, PluginMetadata
 from sqlalchemy import URL, Table, MetaData, make_url
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+from nonebot import logger, require, get_driver, get_plugin_by_module_name
 
 from . import migrate
 from .config import Config
@@ -55,6 +55,7 @@ __all__ = (
     "merge",
     "upgrade",
     "downgrade",
+    "sync",
     "show",
     "history",
     "heads",
@@ -77,7 +78,8 @@ __plugin_meta__ = PluginMetadata(
 _binds: dict[type[Model], AsyncEngine]
 _engines: dict[str, AsyncEngine]
 _metadatas: dict[str, MetaData]
-_session_factory: sa_asyncio.async_sessionmaker[AsyncSession]
+_plugins: dict[str, Plugin]
+_session_factory: sa_async.async_sessionmaker[AsyncSession]
 
 _driver = get_driver()
 
@@ -90,9 +92,8 @@ async def init_orm() -> None:
         if plugin_config.alembic_startup_check:
             await greenlet_spawn(migrate.check, alembic_config)
         else:
-            logger.warning("跳过启动检查，直接创建所有表并标记数据库为最新修订版本")
-            await migrate._upgrade_fast(alembic_config)
-            await greenlet_spawn(migrate.stamp, alembic_config)
+            logger.warning("跳过启动检查，正在同步数据库模式...")
+            await greenlet_spawn(migrate.sync, alembic_config)
 
 
 def _init_orm():
@@ -100,24 +101,24 @@ def _init_orm():
 
     _init_engines()
     _init_table()
-    _session_factory = sa_asyncio.async_sessionmaker(
+    _session_factory = sa_async.async_sessionmaker(
         _engines[""], binds=_binds, **plugin_config.sqlalchemy_session_options
     )
 
 
 @wraps(lambda: None)  # NOTE: for dependency injection
-def get_session(**local_kw: Any) -> sa_asyncio.AsyncSession:
+def get_session(**local_kw: Any) -> sa_async.AsyncSession:
     try:
         return _session_factory(**local_kw)
     except NameError:
         raise RuntimeError("nonebot-plugin-orm 未初始化") from None
 
 
-AsyncSession = Annotated[sa_asyncio.AsyncSession, Depends(get_session)]
+AsyncSession = Annotated[sa_async.AsyncSession, Depends(get_session)]
 
 
 async def get_scoped_session() -> (
-    AsyncGenerator[sa_asyncio.async_scoped_session[AsyncSession], None]
+    AsyncGenerator[sa_async.async_scoped_session[AsyncSession], None]
 ):
     try:
         scoped_session = async_scoped_session(
@@ -131,7 +132,7 @@ async def get_scoped_session() -> (
 
 
 async_scoped_session = Annotated[
-    sa_asyncio.async_scoped_session[AsyncSession], Depends(get_scoped_session)
+    sa_async.async_scoped_session[sa_async.AsyncSession], Depends(get_scoped_session)
 ]
 
 
@@ -186,19 +187,20 @@ def _init_engines():
 
 
 def _init_table():
-    global _binds, _metadatas
+    global _binds, _metadatas, _plugins
 
     _binds = {}
+    _plugins = {}
 
-    if len(_engines) == 1:  # NOTE: common case: only default engine
-        _metadatas = {"": Model.metadata}
-        return
-
+    _get_plugin_by_module_name = lru_cache(None)(get_plugin_by_module_name)
     for model in Model.__subclasses__():
         table: Table | None = getattr(model, "__table__", None)
 
         if table is None or (bind_key := table.info.get("bind_key")) is None:
             continue
+
+        if plugin := _get_plugin_by_module_name(model.__module__):
+            _plugins[plugin.name] = plugin
 
         _binds[model] = _engines.get(bind_key, _engines[""])
         table.to_metadata(_metadatas.get(bind_key, _metadatas[""]))

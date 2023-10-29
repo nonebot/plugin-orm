@@ -79,7 +79,7 @@ def process_revision_directives(
     if getattr(config.cmd_opts, "autogenerate", False) and all(
         filter(
             methodcaller("is_empty"),
-            cast("MigrationScript", directives[0]).upgrade_ops_list,
+            cast(MigrationScript, directives[0]).upgrade_ops_list,
         )
     ):
         directives[:] = []
