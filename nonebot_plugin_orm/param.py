@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import sys
 from itertools import repeat
-from inspect import Parameter
 from dataclasses import dataclass
+from inspect import Parameter, isclass
 from typing_extensions import Annotated
 from typing import Any, Tuple, Iterator, Sequence, AsyncIterator, cast
 
@@ -159,7 +159,7 @@ class ORMParam(DependParam):
 
         if depends_inner is not None:
             dependency = compile_dependency(depends_inner.dependency, option)
-        elif all(map(issubclass, models, repeat(Model))):
+        elif all(map(isclass, models)) and all(map(issubclass, models, repeat(Model))):
             models = cast(Tuple[Model, ...], models)
             dependency = compile_dependency(
                 select(*models).where(
