@@ -152,7 +152,7 @@ def _init_engines():
     global _engines, _metadatas
 
     _engines = {}
-    _metadatas = {}
+    _metadatas = {"": MetaData()}
     for name, engine in plugin_config.sqlalchemy_binds.items():
         _engines[name] = _create_engine(engine)
         _metadatas[name] = MetaData()
@@ -174,10 +174,9 @@ def _init_engines():
             '必须指定一个默认数据库引擎 (SQLALCHEMY_DATABASE_URL 或 SQLALCHEMY_BINDS[""])'
         ) from None
 
-    _engines[""] = create_async_engine(
+    _engines[""] = _create_engine(
         f"sqlite+aiosqlite:///{get_data_file(__plugin_meta__.name, 'db.sqlite3')}"
     )
-    _metadatas[""] = MetaData()
 
 
 def _init_table():
