@@ -6,8 +6,6 @@ from operator import methodcaller
 
 from alembic import context
 from sqlalchemy.util import await_fallback
-from alembic.migration import MigrationContext
-from alembic.operations import MigrateOperation
 from alembic.operations.ops import MigrationScript
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncConnection
 from sqlalchemy import MetaData, Connection, TwoPhaseTransaction
@@ -68,19 +66,12 @@ def run_migrations_offline() -> None:
             config.print_stdout(f"将输出写入到 {file_}")
 
 
-def process_revision_directives(
-    context: MigrationContext,
-    revision: tuple[str, str],
-    directives: list[MigrateOperation],
-) -> None:
+def process_revision_directives(_, __, directives: list[MigrationScript]) -> None:
     # 此回调用于防止在模型没有更改时生成自动迁移。
     # 参见：https://alembic.sqlalchemy.org/en/latest/cookbook.html#don-t-generate-empty-migrations-with-autogenerate
 
     if getattr(config.cmd_opts, "autogenerate", False) and all(
-        filter(
-            methodcaller("is_empty"),
-            cast(MigrationScript, directives[0]).upgrade_ops_list,
-        )
+        filter(methodcaller("is_empty"), directives[0].upgrade_ops_list)
     ):
         directives[:] = []
         config.print_stdout("未检测到模型更改")
