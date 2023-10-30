@@ -5,10 +5,10 @@ import json
 import logging
 from io import StringIO
 from pathlib import Path
+from functools import wraps
 from itertools import repeat
 from contextlib import suppress
 from typing import Any, TypeVar
-from functools import wraps, lru_cache
 from typing_extensions import Annotated
 from dataclasses import field, dataclass
 from collections.abc import Callable, Iterable
@@ -46,14 +46,6 @@ _P = ParamSpec("_P")
 
 
 DependsInner = type(Depends())
-
-
-class _ReturnEq:
-    def __eq__(self, __o: _T) -> _T:
-        return __o
-
-
-return_eq = _ReturnEq()
 
 
 class LoguruHandler(logging.Handler):
@@ -226,7 +218,7 @@ def return_progressbar(func: Callable[_P, Iterable[_T]]) -> Callable[_P, Iterabl
     return wrapper
 
 
-_packages_distributions = lru_cache(None)(packages_distributions)
+pkgs = packages_distributions()
 
 
 def is_editable(plugin: Plugin) -> bool:
@@ -234,23 +226,27 @@ def is_editable(plugin: Plugin) -> bool:
     while plugin.parent_plugin:
         plugin = plugin.parent_plugin
 
+    path = files(plugin.module)
+
+    if not isinstance(path, Path) or "site-packages" in path.parts:
+        return False
+
     dist: Distribution | None = None
 
-    if plugin.metadata:
-        with suppress(PackageNotFoundError):
-            dist = distribution(plugin.metadata.name)
+    with suppress(PackageNotFoundError):
+        dist = distribution(plugin.name.replace("_", "-"))
 
-    # XXX: 有些包有不正确的 top_level.txt (例如: kiwisolver 的 src),
-    #      导致下面的代码有可能得出错误的结果. 参见: https://github.com/nucleic/kiwi/issues/169
-    # if not dist:
-    #     with suppress(KeyError, IndexError):
-    #         dist = distribution(
-    #             _packages_distributions()[plugin.module_name.split(".")[0]][0]
-    #         )
+    if not (dist or plugin.module.__file__ is None):
+        path = Path(plugin.module.__file__)
+        for name in pkgs.get(plugin.module_name.split(".")[0], ()):
+            dist = distribution(name)
+            if path in map(methodcaller("locate"), dist.files or ()):
+                break
+        else:
+            dist = None
 
-    if not dist:
-        path = files(plugin.module)
-        return isinstance(path, Path) and "site-packages" not in path.parts
+    if dist is None:
+        return True
 
     # https://github.com/pdm-project/pdm/blob/fee1e6bffd7de30315e2134e19f9a6f58e15867c/src/pdm/utils.py#L361-L374
     if getattr(dist, "link_file", None) is not None:
