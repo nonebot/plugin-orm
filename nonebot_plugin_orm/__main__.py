@@ -7,7 +7,6 @@ from warnings import catch_warnings, filterwarnings
 
 import click
 from alembic.script import Script
-from sqlalchemy.util import greenlet_spawn
 
 from . import migrate
 from .config import plugin_config

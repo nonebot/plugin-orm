@@ -22,9 +22,9 @@ from alembic.operations.ops import UpgradeOps
 from alembic.util.editor import open_in_editor
 from alembic.runtime.migration import StampStep
 from alembic.script import Script, ScriptDirectory
-from alembic.autogenerate.api import RevisionContext
 from alembic.util.langhelpers import rev_id as _rev_id
 from alembic.migration import RevisionStep, MigrationContext
+from alembic.autogenerate.api import RevisionContext, compare_metadata
 from alembic.runtime.environment import EnvironmentContext, ProcessRevisionDirectiveFn
 
 from .utils import is_editable, return_progressbar
@@ -664,17 +664,14 @@ def sync(config: Config, revision: str | None = None):
     )
 
     def retrieve_migrations(
-        rev: tuple[str, ...], context: MigrationContext
+        _, context: MigrationContext
     ) -> list[RevisionStep] | tuple[()]:
-        if not revision:
-            revision_context.run_autogenerate(rev, context)
-            migration_script = revision_context.generated_revisions[-1]
-            diffs = cast(UpgradeOps, migration_script.upgrade_ops).as_diffs()
-            if not diffs:
-                return ()
+        assert context.connection
+
+        if not (revision or compare_metadata(context, context.opts["target_metadata"])):
+            return ()
 
         metadata = MetaData()
-        assert context.connection
         metadata.reflect(context.connection)
         metadata.drop_all(context.connection)
 
