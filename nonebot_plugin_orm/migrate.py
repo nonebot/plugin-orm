@@ -8,10 +8,9 @@ from itertools import chain
 from argparse import Namespace
 from tempfile import TemporaryDirectory
 from configparser import DuplicateSectionError
-from typing_extensions import ParamSpec, Concatenate
+from typing import Any, Set, Tuple, TextIO, cast
 from contextlib import ExitStack, suppress, contextmanager
 from collections.abc import Mapping, Iterable, Sequence, Generator
-from typing import Any, Set, Tuple, TextIO, TypeVar, Callable, cast
 
 import click
 from nonebot import logger
@@ -427,16 +426,16 @@ def revision(
     if sql:
 
         def retrieve_migrations(
-            rev: tuple[str, ...], context: MigrationContext
-        ) -> tuple[()]:
+            rev, context: MigrationContext
+        ) -> Iterable[StampStep | RevisionStep]:
             revision_context.run_no_autogenerate(rev, context)
             return ()
 
     else:
 
         def retrieve_migrations(
-            rev: tuple[str, ...], context: MigrationContext
-        ) -> tuple[()]:
+            rev, context: MigrationContext
+        ) -> Iterable[StampStep | RevisionStep]:
             if set(script.get_revisions(rev)) != set(script.get_revisions("heads")):
                 raise click.UsageError("目标数据库未更新到最新迁移. 请通过 `nb orm upgrade` 升级数据库后重试.")
             revision_context.run_autogenerate(rev, context)
@@ -482,8 +481,8 @@ def check(config: AlembicConfig) -> None:
     )
 
     def retrieve_migrations(
-        rev: tuple[str, ...], context: MigrationContext
-    ) -> tuple[()]:
+        rev, context: MigrationContext
+    ) -> Iterable[StampStep | RevisionStep]:
         if set(script.get_revisions(rev)) != set(script.get_revisions("heads")):
             raise click.UsageError("目标数据库未更新到最新迁移. 请通过 `nb orm upgrade` 升级数据库后重试.")
         revision_context.run_autogenerate(rev, context)
@@ -526,7 +525,7 @@ def merge(
     """
 
     script = ScriptDirectory.from_config(config)
-    template_args = {"config": config}
+    template_args: dict[str, Any] = {"config": config}
 
     environment = asbool(config.get_main_option("revision_environment"))
 
@@ -544,9 +543,9 @@ def merge(
         rev_id or _rev_id(),
         message,
         refresh=True,
-        head=revisions,  # type: ignore[arg-type]
+        head=revisions,
         branch_labels=branch_label,
-        **template_args,  # type: ignore[arg-type]
+        **template_args,
     )
     return (sc,) if sc else ()
 
@@ -578,8 +577,8 @@ def upgrade(
         starting_rev, revision = revision.split(":", 2)
 
     @return_progressbar
-    def upgrade(rev: tuple[str, ...], _) -> list[RevisionStep]:
-        return script._upgrade_revs(revision, rev)  # type: ignore
+    def upgrade(rev, _) -> Iterable[StampStep | RevisionStep]:
+        yield from script._upgrade_revs(revision, rev)
 
     with EnvironmentContext(
         config,
@@ -620,8 +619,8 @@ def downgrade(
         )
 
     @return_progressbar
-    def downgrade(rev: tuple[str, ...], _) -> list[RevisionStep]:
-        return script._downgrade_revs(revision, rev)  # type: ignore
+    def downgrade(rev, _) -> Iterable[StampStep | RevisionStep]:
+        yield from script._downgrade_revs(revision, rev)
 
     with EnvironmentContext(
         config,
@@ -662,8 +661,8 @@ def sync(config: AlembicConfig, revision: str | None = None):
     )
 
     def retrieve_migrations(
-        _, context: MigrationContext
-    ) -> list[RevisionStep] | tuple[()]:
+        rev, context: MigrationContext
+    ) -> Iterable[StampStep | RevisionStep]:
         assert context.connection
 
         if not (revision or compare_metadata(context, context.opts["target_metadata"])):
@@ -841,7 +840,9 @@ def current(config: AlembicConfig, verbose: bool = False) -> None:
 
     script = ScriptDirectory.from_config(config)
 
-    def display_version(rev: tuple[str, ...], context: MigrationContext) -> tuple[()]:
+    def display_version(
+        rev, context: MigrationContext
+    ) -> Iterable[StampStep | RevisionStep]:
         if verbose:
             config.print_stdout(
                 "Current revision(s) for %s:",
@@ -894,8 +895,9 @@ def stamp(
     else:
         destination_revs = revisions
 
-    def do_stamp(rev: tuple[str, ...], _) -> list[StampStep]:
-        return script._stamp_revs(destination_revs, rev)
+    def do_stamp(rev, _) -> Iterable[StampStep | RevisionStep]:
+        yield from script._stamp_revs(destination_revs, rev)
+        _move_run_scripts(config, script, destination_revs)
 
     with EnvironmentContext(
         config,
@@ -922,7 +924,7 @@ def edit(config: AlembicConfig, rev: str = "current") -> None:
 
     if rev == "current":
 
-        def edit_current(rev: tuple[str, ...], _) -> tuple[()]:
+        def edit_current(rev, _) -> Iterable[StampStep | RevisionStep]:
             if not rev:
                 raise click.UsageError("当前没有迁移")
 
@@ -955,7 +957,9 @@ def ensure_version(config: AlembicConfig, sql: bool = False) -> None:
 
     script = ScriptDirectory.from_config(config)
 
-    def do_ensure_version(_, context: MigrationContext) -> tuple[()]:
+    def do_ensure_version(
+        _, context: MigrationContext
+    ) -> Iterable[StampStep | RevisionStep]:
         context._ensure_version_table()
         return ()
 
