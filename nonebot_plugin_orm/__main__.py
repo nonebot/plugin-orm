@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Iterable
+from typing import TypeVar
+from functools import wraps
 from argparse import Namespace
-from warnings import catch_warnings, filterwarnings
+from collections.abc import Callable, Iterable
+from typing_extensions import ParamSpec, Concatenate
 
 import click
 from alembic.script import Script
@@ -11,6 +13,9 @@ from alembic.script import Script
 from . import migrate
 from .config import plugin_config
 from .migrate import AlembicConfig
+
+_P = ParamSpec("_P")
+_R = TypeVar("_R")
 
 
 @click.group()
@@ -35,23 +40,47 @@ from .migrate import AlembicConfig
 )
 @click.option("-q", "--quite", is_flag=True, help="不要输出日志到标准输出")
 @click.pass_context
-def orm(
-    ctx: click.Context, config: Path, name: str, x: tuple[str, ...], quite: bool
-) -> None:
+def orm(ctx: click.Context, config: Path, name: str, **_) -> None:
     ctx.show_default = True
-    use_tempdir = ctx.invoked_subcommand in ("revision", "merge", "edit")
 
     if isinstance(plugin_config.alembic_config, AlembicConfig):
         ctx.obj = plugin_config.alembic_config
     else:
-        ctx.obj = AlembicConfig(
-            config, name, cmd_opts=Namespace(**ctx.params), use_tempdir=use_tempdir
-        )
+        cmd_opts = Namespace(**ctx.params)
+
+        if ctx.invoked_subcommand:
+            arguments = []
+            options = []
+
+            for param in globals()[ctx.invoked_subcommand].params:
+                if isinstance(param, click.Argument):
+                    arguments.append(param.name)
+                elif isinstance(param, click.Option):
+                    options.append(param.name)
+
+            cmd_opts.cmd = (
+                getattr(migrate, ctx.invoked_subcommand),
+                arguments,
+                options,
+            )
+
+        ctx.obj = AlembicConfig(config, name, cmd_opts=cmd_opts)
 
     ctx.call_on_close(ctx.obj.close)
-    if use_tempdir:
-        ctx.with_resource(catch_warnings())
-        filterwarnings("ignore", r"Revision \w* is present more than once", UserWarning)
+
+
+def update_cmd_opts(
+    f: Callable[Concatenate[AlembicConfig, _P], _R]
+) -> Callable[_P, _R]:
+    @wraps(f)
+    @click.pass_context
+    def wrapper(ctx: click.Context, *args: _P.args, **kwargs: _P.kwargs) -> _R:
+        for key, value in kwargs.items():
+            setattr(ctx.obj.cmd_opts, key, value)
+
+        return f(ctx.obj, *args, **kwargs)
+
+    return wrapper
 
 
 @orm.result_callback()
@@ -65,7 +94,7 @@ def move_script(config_: AlembicConfig, scripts: Iterable[Script] | None, **_) -
 
 
 @orm.command("list_templates")
-@click.pass_obj
+@update_cmd_opts
 def list_templates(*args, **kwargs) -> None:
     """列出所有可用的模板."""
 
@@ -80,7 +109,7 @@ def list_templates(*args, **kwargs) -> None:
 )
 @click.option("-t", "--template", default="generic", help="使用的迁移环境模板")
 @click.option("--package", is_flag=True, help="在脚本目录和版本目录中创建 __init__.py 文件")
-@click.pass_obj
+@update_cmd_opts
 def init(*args, **kwargs) -> None:
     """初始化脚本目录."""
 
@@ -101,7 +130,7 @@ def init(*args, **kwargs) -> None:
 )
 @click.option("--rev-id", help="指定而不是使用生成的迁移 ID")
 @click.option("--depends-on", help="依赖的迁移")
-@click.pass_obj
+@update_cmd_opts
 def revision(*args, **kwargs) -> Iterable[Script]:
     """创建一个新迁移脚本."""
 
@@ -109,7 +138,7 @@ def revision(*args, **kwargs) -> Iterable[Script]:
 
 
 @orm.command()
-@click.pass_obj
+@update_cmd_opts
 def check(*args, **kwargs) -> None:
     """检查数据库是否与模型定义一致."""
 
@@ -121,7 +150,7 @@ def check(*args, **kwargs) -> None:
 @click.option("-m", "--message", help="描述")
 @click.option("--branch-label", help="分支标签")
 @click.option("--rev-id", help="指定而不是使用生成的迁移 ID")
-@click.pass_obj
+@update_cmd_opts
 def merge(*args, **kwargs) -> Iterable[Script]:
     """合并多个迁移.创建一个新的迁移脚本."""
 
@@ -132,7 +161,7 @@ def merge(*args, **kwargs) -> Iterable[Script]:
 @click.argument("revision", required=False)
 @click.option("--sql", is_flag=True, help="以 SQL 的形式输出迁移脚本")
 @click.option("--tag", help="一个任意的字符串, 可在自定义的 env.py 中使用")
-@click.pass_obj
+@update_cmd_opts
 def upgrade(*args, **kwargs) -> None:
     """升级到较新版本."""
 
@@ -143,7 +172,7 @@ def upgrade(*args, **kwargs) -> None:
 @click.argument("revision")
 @click.option("--sql", is_flag=True, help="以 SQL 的形式输出迁移脚本")
 @click.option("--tag", help="一个任意的字符串, 可在自定义的 env.py 中使用")
-@click.pass_obj
+@update_cmd_opts
 def downgrade(*args, **kwargs) -> None:
     """回退到先前版本."""
 
@@ -152,7 +181,7 @@ def downgrade(*args, **kwargs) -> None:
 
 @orm.command()
 @click.argument("revision", required=False)
-@click.pass_obj
+@update_cmd_opts
 def sync(*args, **kwargs) -> None:
     """同步数据库模式 (仅用于开发)."""
 
@@ -161,7 +190,7 @@ def sync(*args, **kwargs) -> None:
 
 @orm.command()
 @click.argument("revs", nargs=-1)
-@click.pass_obj
+@update_cmd_opts
 def show(*args, **kwargs) -> None:
     """显示迁移的信息."""
 
@@ -172,7 +201,7 @@ def show(*args, **kwargs) -> None:
 @click.option("-r", "--rev-range", required=False, help="范围")
 @click.option("-v", "--verbose", is_flag=True, help="显示详细信息")
 @click.option("-i", "--indicate-current", is_flag=True, help="指示出当前迁移")
-@click.pass_obj
+@update_cmd_opts
 def history(*args, **kwargs) -> None:
     """显示迁移的历史."""
 
@@ -182,7 +211,7 @@ def history(*args, **kwargs) -> None:
 @orm.command()
 @click.option("-v", "--verbose", is_flag=True, help="显示详细信息")
 @click.option("--resolve-dependencies", is_flag=True, help="将依赖的迁移视作父迁移")
-@click.pass_obj
+@update_cmd_opts
 def heads(*args, **kwargs) -> None:
     """显示所有的分支头."""
 
@@ -191,7 +220,7 @@ def heads(*args, **kwargs) -> None:
 
 @orm.command()
 @click.option("-v", "--verbose", is_flag=True, help="显示详细信息")
-@click.pass_obj
+@update_cmd_opts
 def branches(*args, **kwargs) -> None:
     """显示所有的分支."""
 
@@ -200,7 +229,7 @@ def branches(*args, **kwargs) -> None:
 
 @orm.command()
 @click.option("-v", "--verbose", is_flag=True, help="显示详细信息")
-@click.pass_obj
+@update_cmd_opts
 def current(*args, **kwargs) -> None:
     """显示当前的迁移."""
 
@@ -212,7 +241,7 @@ def current(*args, **kwargs) -> None:
 @click.option("--sql", is_flag=True, help="以 SQL 的形式输出迁移脚本")
 @click.option("--tag", help="一个任意的字符串, 可在自定义的 env.py 中使用")
 @click.option("--purge", is_flag=True, help="在标记前清空数据库版本表")
-@click.pass_obj
+@update_cmd_opts
 def stamp(*args, **kwargs) -> None:
     """将数据库标记为特定的迁移版本, 不运行任何迁移."""
 
@@ -221,7 +250,7 @@ def stamp(*args, **kwargs) -> None:
 
 @orm.command()
 @click.argument("rev", default="current")
-@click.pass_obj
+@update_cmd_opts
 def edit(*args, **kwargs) -> None:
     """使用 $EDITOR 编辑迁移脚本."""
 
@@ -230,7 +259,7 @@ def edit(*args, **kwargs) -> None:
 
 @orm.command("ensure_version")
 @click.option("--sql", is_flag=True, help="以 SQL 的形式输出迁移脚本")
-@click.pass_obj
+@update_cmd_opts
 def ensure_version(*args, **kwargs) -> None:
     """创建版本表."""
 
