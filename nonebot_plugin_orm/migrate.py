@@ -3,9 +3,11 @@ from __future__ import annotations
 import os
 import sys
 import shutil
+import inspect
 from pathlib import Path
-from itertools import chain
+from pprint import pformat
 from argparse import Namespace
+from operator import methodcaller
 from tempfile import TemporaryDirectory
 from configparser import DuplicateSectionError
 from typing import Any, Set, Tuple, TextIO, cast
@@ -13,18 +15,23 @@ from contextlib import ExitStack, suppress, contextmanager
 from collections.abc import Mapping, Iterable, Sequence, Generator
 
 import click
+import alembic
+import sqlalchemy
 from nonebot import logger
 from alembic.config import Config
 from sqlalchemy.util import asbool
 from sqlalchemy import MetaData, Connection
-from alembic.operations.ops import UpgradeOps
 from alembic.util.editor import open_in_editor
-from alembic.runtime.migration import StampStep
 from alembic.script import Script, ScriptDirectory
 from alembic.util.langhelpers import rev_id as _rev_id
-from alembic.migration import RevisionStep, MigrationContext
-from alembic.autogenerate.api import RevisionContext, compare_metadata
+from alembic.operations.ops import UpgradeOps, DowngradeOps
+from alembic.migration import StampStep, RevisionStep, MigrationContext
 from alembic.runtime.environment import EnvironmentContext, ProcessRevisionDirectiveFn
+from alembic.autogenerate.api import (
+    RevisionContext,
+    produce_migrations,
+    render_python_code,
+)
 
 from .utils import is_editable, return_progressbar
 
@@ -56,8 +63,6 @@ __all__ = (
     "ensure_version",
 )
 
-_T = TypeVar("_T")
-_P = ParamSpec("_P")
 _SPLIT_ON_PATH = {
     None: " ",
     "space": " ",
@@ -70,7 +75,7 @@ _SPLIT_ON_PATH = {
 class AlembicConfig(Config):
     _exit_stack: ExitStack
     _plugin_version_locations: dict[str, Path]
-    _temp_dir: TemporaryDirectory | None = None
+    _temp_dir: Path
 
     def __init__(
         self,
@@ -81,7 +86,6 @@ class AlembicConfig(Config):
         cmd_opts: Namespace | None = None,
         config_args: Mapping[str, Any] = {},
         attributes: dict = {},
-        use_tempdir: bool = True,
     ) -> None:
         from . import _engines, _metadatas, plugin_config
 
@@ -126,9 +130,7 @@ class AlembicConfig(Config):
 
         self._exit_stack = ExitStack()
         self._plugin_version_locations = {}
-        if use_tempdir:
-            self._temp_dir = TemporaryDirectory()
-            self._exit_stack.enter_context(self._temp_dir)
+        self._temp_dir = Path(self._exit_stack.enter_context(TemporaryDirectory()))
 
         self._init_post_write_hooks()
         self._init_version_locations()
@@ -164,11 +166,8 @@ class AlembicConfig(Config):
     def move_script(self, script: Script) -> Path:
         script_path = Path(script.path)
 
-        if not self._temp_dir:
-            return script_path
-
         try:
-            script_path = script_path.relative_to(self._temp_dir.name)
+            script_path = script_path.relative_to(self._temp_dir)
         except ValueError:
             return script_path
 
@@ -230,28 +229,23 @@ class AlembicConfig(Config):
             )
 
     def _init_version_locations(self) -> None:
-        from . import _plugins, plugin_config
-
-        alembic_version_locations = plugin_config.alembic_version_locations
-
         if self.get_main_option("version_locations"):
-            # NOTE: skip if explicitly set
             return
 
+        from . import _plugins, _data_dir, plugin_config
+
+        alembic_version_locations = plugin_config.alembic_version_locations
         if isinstance(alembic_version_locations, dict):
-            if _main_version_location := alembic_version_locations.get(""):
-                main_version_location = self._plugin_version_locations[""] = Path(
-                    _main_version_location
-                )
-            else:
-                main_version_location = None
+            main_version_location = Path(
+                alembic_version_locations.get("", "migrations/versions")
+            )
         else:
-            main_version_location = self._plugin_version_locations[""] = Path(
+            main_version_location = Path(
                 alembic_version_locations or "migrations/versions"
             )
+        self._plugin_version_locations[""] = main_version_location
 
-        temp_dir = Path(self._temp_dir.name) if self._temp_dir else None
-        version_locations = {}
+        version_locations = {_data_dir / "migrations": ""}
 
         for plugin in _plugins.values():
             if plugin.metadata and (
@@ -263,50 +257,60 @@ class AlembicConfig(Config):
 
             if is_editable(plugin) and isinstance(version_location, Path):
                 self._plugin_version_locations[plugin.name] = version_location
-            elif main_version_location:
+            else:
                 self._plugin_version_locations[plugin.name] = (
                     main_version_location / plugin.name
                 )
 
-            version_location = self._exit_stack.enter_context(as_file(version_location))
-            version_locations[version_location] = plugin.name
+            version_locations[
+                self._exit_stack.enter_context(as_file(version_location))
+            ] = plugin.name
 
         if isinstance(alembic_version_locations, dict):
             for name, path in alembic_version_locations.items():
                 path = self._plugin_version_locations[name] = Path(path)
                 version_locations[path] = name
-        elif main_version_location:
-            version_locations[main_version_location] = ""
 
-        if temp_dir:
-            for src, dst in version_locations.items():
-                with suppress(FileNotFoundError):
-                    shutil.copytree(src, temp_dir / dst, dirs_exist_ok=True)
+        version_locations[main_version_location] = ""
 
-            version_locations = (temp_dir, *map(temp_dir.joinpath, _plugins))
-        else:
-            version_locations = reversed(version_locations)
-
-            if main_version_location and main_version_location.exists():
-                version_locations = chain(
-                    map(main_version_location.joinpath, _plugins), version_locations
-                )
+        for src, dst in version_locations.items():
+            with suppress(FileNotFoundError):
+                shutil.copytree(src, self._temp_dir / dst, dirs_exist_ok=True)
 
         pathsep = _SPLIT_ON_PATH[self.get_main_option("version_path_separator")]
         self.set_main_option(
-            "version_locations", pathsep.join(map(str, version_locations))
+            "version_locations",
+            pathsep.join(
+                map(
+                    str,
+                    (
+                        self._temp_dir,
+                        *filter(methodcaller("is_dir"), self._temp_dir.iterdir()),
+                    ),
+                )
+            ),
         )
 
 
-def use_tempdir(
-    func: Callable[Concatenate[AlembicConfig, _P], _T]
-) -> Callable[Concatenate[AlembicConfig, _P], _T]:
-    def wrapper(config: AlembicConfig, *args: _P.args, **kwargs: _P.kwargs) -> _T:
-        if config._temp_dir:
-            return func(config, *args, **kwargs)
-        raise RuntimeError("AlembicConfig 未启用临时目录")
+def _move_run_scripts(config: AlembicConfig, script: ScriptDirectory, current) -> None:
+    from . import _data_dir
 
-    return wrapper
+    def ignore(path: str, names: list[str]) -> set[str]:
+        path_ = Path(path)
+
+        return set(
+            filter(
+                lambda name: Path(name).suffix in {".py", ".pyc", ".pyo"}
+                and path_ / name not in run_script_path,
+                names,
+            )
+        )
+
+    run_script_path = set(
+        Path(sc.path) for sc in script.walk_revisions(base="base", head=current)
+    )
+    shutil.rmtree(_data_dir / "migrations", ignore_errors=True)
+    shutil.copytree(config._temp_dir, _data_dir / "migrations", ignore=ignore)
 
 
 def list_templates(config: AlembicConfig) -> None:
@@ -362,7 +366,6 @@ def init(
         )
 
 
-@use_tempdir
 def revision(
     config: AlembicConfig,
     message: str | None = None,
@@ -395,18 +398,16 @@ def revision(
         head = "base" if branch_label else "head"
 
     if version_path:
-        version_location = config.get_main_option("version_locations")
+        version_locations = config.get_main_option("version_locations")
         pathsep = _SPLIT_ON_PATH[config.get_main_option("version_path_separator")]
         config.set_main_option(
-            "version_locations", f"{version_location}{pathsep}{version_path}"
+            "version_locations", f"{version_locations}{pathsep}{version_path}"
         )
         logger.warning(
             f'临时将目录 "{version_path}" 添加到版本目录中, 请稍后将其添加到 ALEMBIC_VERSION_LOCATIONS 中'
         )
     elif branch_label in _plugins:
-        version_path = (
-            Path(cast(TemporaryDirectory, config._temp_dir).name) / branch_label
-        )
+        version_path = config._temp_dir / branch_label
 
     script = ScriptDirectory.from_config(config)
 
@@ -467,21 +468,20 @@ def check(config: AlembicConfig) -> None:
 
     script = ScriptDirectory.from_config(config)
 
-    command_args = dict(
-        message=None,
-        autogenerate=True,
-        sql=False,
-        head="head",
-        splice=False,
-        branch_label=None,
-        version_path=None,
-        rev_id=None,
-        depends_on=None,
-    )
     revision_context = RevisionContext(
         config,
         script,
-        command_args,
+        dict(
+            message=None,
+            autogenerate=True,
+            sql=False,
+            head="head",
+            splice=False,
+            branch_label=None,
+            version_path=None,
+            rev_id=None,
+            depends_on=None,
+        ),
     )
 
     def retrieve_migrations(
@@ -510,7 +510,6 @@ def check(config: AlembicConfig) -> None:
         config.print_stdout("没有检测到新的升级操作")
 
 
-@use_tempdir
 def merge(
     config: AlembicConfig,
     revisions: tuple[str, ...],
@@ -583,6 +582,7 @@ def upgrade(
     @return_progressbar
     def upgrade(rev, _) -> Iterable[StampStep | RevisionStep]:
         yield from script._upgrade_revs(revision, rev)
+        _move_run_scripts(config, script, revision)
 
     with EnvironmentContext(
         config,
@@ -625,6 +625,7 @@ def downgrade(
     @return_progressbar
     def downgrade(rev, _) -> Iterable[StampStep | RevisionStep]:
         yield from script._downgrade_revs(revision, rev)
+        _move_run_scripts(config, script, revision)
 
     with EnvironmentContext(
         config,
@@ -647,21 +648,20 @@ def sync(config: AlembicConfig, revision: str | None = None):
     """
     script = ScriptDirectory.from_config(config)
 
-    command_args = dict(
-        message=None,
-        autogenerate=True,
-        sql=False,
-        head="head",
-        splice=False,
-        branch_label=None,
-        version_path=None,
-        rev_id=None,
-        depends_on=None,
-    )
     revision_context = RevisionContext(
         config,
         script,
-        command_args,
+        dict(
+            message=None,
+            autogenerate=True,
+            sql=False,
+            head="head",
+            splice=False,
+            branch_label=None,
+            version_path=None,
+            rev_id=None,
+            depends_on=None,
+        ),
     )
 
     def retrieve_migrations(
@@ -669,19 +669,30 @@ def sync(config: AlembicConfig, revision: str | None = None):
     ) -> Iterable[StampStep | RevisionStep]:
         assert context.connection
 
-        if not (revision or compare_metadata(context, context.opts["target_metadata"])):
-            return ()
+        metadata = MetaData() if revision else context.opts["target_metadata"]
+        ops = cast(UpgradeOps, produce_migrations(context, metadata).upgrade_ops)
 
-        metadata = MetaData()
-        metadata.reflect(context.connection)
-        metadata.drop_all(context.connection)
+        if not (revision or ops.as_diffs()):
+            return
+
+        try:
+            _run_ops(context, ops)
+        except Exception:
+            if revision:
+                raise
+
+            _run_ops(
+                context,
+                cast(UpgradeOps, produce_migrations(context, MetaData()).upgrade_ops),
+            )
+            metadata.create_all(context.connection)
+
+        yield from script._stamp_revs("base", rev)
 
         if revision:
-            context._ensure_version_table()
-            return script._upgrade_revs(revision, "base")
+            yield from script._upgrade_revs(revision, "base")
 
-        context.opts["target_metadata"].create_all(context.connection)
-        return ()
+        _move_run_scripts(config, script, revision or "base")
 
     with EnvironmentContext(
         config,
@@ -692,6 +703,19 @@ def sync(config: AlembicConfig, revision: str | None = None):
         revision_context=revision_context,
     ):
         script.run_env()
+
+
+def _run_ops(context: MigrationContext, ops: UpgradeOps | DowngradeOps) -> None:
+    with context.begin_transaction(True):
+        exec(
+            inspect.cleandoc(
+                render_python_code(
+                    ops,
+                    render_as_batch=True,
+                )
+            ),
+            {"sa": sqlalchemy, "op": alembic.op},
+        )
 
 
 def show(config: AlembicConfig, revs: str | Sequence[str] = "current") -> None:

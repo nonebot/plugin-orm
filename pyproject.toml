@@ -11,6 +11,7 @@ dependencies = [
     "click~=8.1",
     "importlib-metadata~=6.8; python_version < '3.10'",
     "importlib-resources~=6.1; python_version < '3.12'",
+    "nonebot-plugin-localstore~=0.5",
     "nonebot2~=2.1",
     "sqlalchemy~=2.0",
     "typing-extensions~=4.8; python_version < '3.12'",
@@ -26,7 +27,7 @@ repository = "https://github.com/nonebot/plugin-orm"
 documentation = "https://github.com/nonebot/plugin-orm"
 
 [project.optional-dependencies]
-default = ["aiosqlite~=0.19", "nonebot-plugin-localstore~=0.5"]
+default = ["aiosqlite~=0.19"]
 mysql = ["aiomysql~=0.2"]
 asyncmy = ["asyncmy~=0.2"]
 aiomysql = ["aiomysql~=0.2"]
@@ -49,7 +50,6 @@ dev = [
     "aiosqlite~=0.19",
     "black~=23.10",
     "isort~=5.12",
-    "nonebot-plugin-localstore~=0.5",
     "nonemoji~=0.1",
     "pre-commit~=3.5",
     "pycln~=2.3",

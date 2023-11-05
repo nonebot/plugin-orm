@@ -31,6 +31,9 @@ if sys.version_info >= (3, 10):
 else:
     from typing_extensions import Annotated
 
+require("nonebot_plugin_localstore")
+from nonebot_plugin_localstore import get_data_dir
+
 __all__ = (
     # __init__
     "init_orm",
@@ -63,6 +66,7 @@ _metadatas: dict[str, MetaData]
 _plugins: dict[str, Plugin]
 _session_factory: sa_async.async_sessionmaker[AsyncSession]
 
+_data_dir = get_data_dir(__plugin_meta__.name)
 _driver = get_driver()
 
 
@@ -162,17 +166,13 @@ def _init_engines():
         import aiosqlite
 
         del aiosqlite
-        require("nonebot_plugin_localstore")
-        from nonebot_plugin_localstore import get_data_file
     except (ImportError, RuntimeError):
         raise ValueError(
             '必须指定一个默认数据库 (SQLALCHEMY_DATABASE_URL 或 SQLALCHEMY_BINDS[""]). '
             "可以通过 `pip install nonebot-plugin-orm[default]` 获得开箱即用的数据库配置."
         ) from None
 
-    _engines[""] = _create_engine(
-        f"sqlite+aiosqlite:///{get_data_file(__plugin_meta__.name, 'db.sqlite3')}"
-    )
+    _engines[""] = _create_engine(f"sqlite+aiosqlite:///{_data_dir / 'db.sqlite3'}")
 
 
 def _init_table():

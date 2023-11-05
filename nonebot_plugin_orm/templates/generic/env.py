@@ -7,6 +7,7 @@ from sqlalchemy import Connection
 from sqlalchemy.util import await_fallback
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from nonebot_plugin_orm.env import no_drop_table
 from nonebot_plugin_orm import AlembicConfig, plugin_config
 
 # Alembic Config 对象, 它提供正在使用的 .ini 文件中的值.
