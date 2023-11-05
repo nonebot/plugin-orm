@@ -260,6 +260,14 @@ def is_editable(plugin: Plugin) -> bool:
     return direct_url_data.get("dir_info", {}).get("editable", False)
 
 
+def get_subclasses(cls: type[_T]) -> set[type[_T]]:
+    subclasses = set()
+    for subclass in cls.__subclasses__():
+        subclasses.add(subclass)
+        subclasses.update(get_subclasses(subclass))
+    return subclasses
+
+
 if sys.version_info >= (3, 10):
     from inspect import get_annotations as get_annotations  # nopycln: import
 else:

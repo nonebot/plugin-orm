@@ -191,14 +191,14 @@ def _init_table():
     _plugins = {}
 
     _get_plugin_by_module_name = lru_cache(None)(get_plugin_by_module_name)
-    for model in Model.__subclasses__():
+    for model in get_subclasses(Model):
         table: Table | None = getattr(model, "__table__", None)
 
         if table is None or (bind_key := table.info.get("bind_key")) is None:
             continue
 
         if plugin := _get_plugin_by_module_name(model.__module__):
-            _plugins[plugin.name] = plugin
+            _plugins[plugin.name.replace("-", "_")] = plugin
 
         _binds[model] = _engines.get(bind_key, _engines[""])
         table.to_metadata(_metadatas.get(bind_key, _metadatas[""]))
@@ -209,9 +209,16 @@ def _init_logger():
     if isinstance(log_level, str):
         log_level = logger.level(log_level).no
 
-    levels = {"alembic": log_level, "sqlalchemy": log_level}
-    if not plugin_config.sqlalchemy_echo:
-        levels["sqlalchemy.engine"] = levels["sqlalchemy.pool"] = logging.WARNING
+    echo_log_level = log_level if plugin_config.sqlalchemy_echo else logging.WARNING
+
+    levels = {
+        "alembic": log_level,
+        "sqlalchemy": log_level,
+        **{
+            _qual_logger_name_for_cls(cls): echo_log_level
+            for cls in get_subclasses(Identified)
+        },
+    }
 
     handler = LoguruHandler()
     for name, level in levels.items():
