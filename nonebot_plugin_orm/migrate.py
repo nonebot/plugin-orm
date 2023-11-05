@@ -274,7 +274,7 @@ class AlembicConfig(Config):
         version_locations[main_version_location] = ""
 
         for src, dst in version_locations.items():
-            with suppress(FileNotFoundError):
+            with suppress(FileNotFoundError, shutil.Error):
                 shutil.copytree(src, self._temp_dir / dst, dirs_exist_ok=True)
 
         pathsep = _SPLIT_ON_PATH[self.get_main_option("version_path_separator")]
