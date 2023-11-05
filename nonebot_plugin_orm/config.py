@@ -26,7 +26,7 @@ class Config(BaseModel, arbitrary_types_allowed=True):
     alembic_version_locations: Union[
         str, os.PathLike, Dict[str, os.PathLike], None
     ] = None
-    alembic_context: Dict[str, Any] = {"render_as_batch": True}
+    alembic_context: Dict[str, Any] = {}
     alembic_startup_check: bool = True
 
 

@@ -107,15 +107,19 @@ class AlembicConfig(Config):
             stdout,
             cmd_opts,
             {
-                "script_location": script_location,
-                "prepend_sys_path": ".",
-                "revision_environment": "true",
-                "version_path_separator": "os",
+                **{
+                    "script_location": script_location,
+                    "prepend_sys_path": ".",
+                    "revision_environment": "true",
+                    "version_path_separator": "os",
+                },
                 **config_args,
             },
             {
-                "engines": _engines,
-                "metadatas": _metadatas,
+                **{
+                    "engines": _engines,
+                    "metadatas": _metadatas,
+                },
                 **attributes,
             },
         )

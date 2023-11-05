@@ -100,7 +100,10 @@ def _init_orm():
     _init_engines()
     _init_table()
     _session_factory = sa_async.async_sessionmaker(
-        _engines[""], binds=_binds, **plugin_config.sqlalchemy_session_options
+        **{
+            **dict(bind=_engines[""], binds=_binds),
+            **plugin_config.sqlalchemy_session_options,
+        }
     )
 
 

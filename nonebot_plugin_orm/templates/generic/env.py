@@ -35,11 +35,15 @@ def run_migrations_offline() -> None:
     """
 
     context.configure(
-        url=engine.url,
-        target_metadata=target_metadata,
-        literal_binds=True,
-        dialect_opts={"paramstyle": "named"},
-        **plugin_config.alembic_context,
+        **{
+            **dict(
+                url=engine.url,
+                dialect_opts={"paramstyle": "named"},
+                target_metadata=target_metadata,
+                literal_binds=True,
+            ),
+            **plugin_config.alembic_context,
+        }
     )
 
     with context.begin_transaction():
@@ -48,9 +52,15 @@ def run_migrations_offline() -> None:
 
 def do_run_migrations(connection: Connection) -> None:
     context.configure(
-        connection=connection,
-        target_metadata=target_metadata,
-        **plugin_config.alembic_context,
+        **{
+            **dict(
+                connection=connection,
+                render_as_batch=True,
+                target_metadata=target_metadata,
+                include_object=no_drop_table,
+            ),
+            **plugin_config.alembic_context,
+        }
     )
 
     with context.begin_transaction():

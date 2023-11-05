@@ -53,12 +53,16 @@ def run_migrations_offline() -> None:
         file_ = f"{name}.sql"
         with open(file_, "w") as buffer:
             context.configure(
-                url=engine.url,
-                output_buffer=buffer,
-                target_metadata=target_metadatas["name"],
-                literal_binds=True,
-                dialect_opts={"paramstyle": "named"},
-                **plugin_config.alembic_context,
+                **{
+                    **dict(
+                        url=engine.url,
+                        dialect_opts={"paramstyle": "named"},
+                        output_buffer=buffer,
+                        target_metadata=target_metadatas["name"],
+                        literal_binds=True,
+                    ),
+                    **plugin_config.alembic_context,
+                }
             )
             with context.begin_transaction():
                 context.run_migrations(name=name)
@@ -78,12 +82,17 @@ def process_revision_directives(_, __, directives: list[MigrationScript]) -> Non
 
 def do_run_migrations(conn: Connection, name: str, metadata: MetaData) -> None:
     context.configure(
-        connection=conn,
-        upgrade_token=f"{name}_upgrades",
-        downgrade_token=f"{name}_downgrades",
-        target_metadata=metadata,
-        process_revision_directives=process_revision_directives,
-        **plugin_config.alembic_context,
+        **{
+            **dict(
+                connection=conn,
+                render_as_batch=True,
+                target_metadata=metadata,
+                include_object=no_drop_table,
+                upgrade_token=f"{name}_upgrades",
+                downgrade_token=f"{name}_downgrades",
+            ),
+            **plugin_config.alembic_context,
+        }
     )
     context.run_migrations(name=name)
 
