@@ -19,7 +19,7 @@ else:
 __all__ = ("Model",)
 
 
-NAMING_CONVENTION = {
+_NAMING_CONVENTION = {
     "ix": "ix_%(column_0_label)s",
     "uq": "uq_%(table_name)s_%(column_0_name)s",
     "ck": "ck_%(table_name)s_%(constraint_name)s",
@@ -29,7 +29,7 @@ NAMING_CONVENTION = {
 
 
 class Model(DeclarativeBase):
-    metadata = MetaData(naming_convention=NAMING_CONVENTION)
+    metadata = MetaData(naming_convention=_NAMING_CONVENTION)
 
     if TYPE_CHECKING:
         __bind_key__: ClassVar[str]

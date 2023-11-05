@@ -2,23 +2,29 @@ from __future__ import annotations
 
 import sys
 import logging
+from typing import Any
 from asyncio import gather
 from operator import methodcaller
-from typing import Any, AsyncGenerator
+from collections.abc import AsyncGenerator
 from functools import wraps, partial, lru_cache
 
-from nonebot.params import Depends
+import click
+from nonebot.rule import Rule
 import sqlalchemy.ext.asyncio as sa_async
+from nonebot.permission import Permission
 from sqlalchemy.util import greenlet_spawn
-from nonebot.matcher import current_matcher
+from nonebot.params import Depends, DefaultParam
 from nonebot.plugin import Plugin, PluginMetadata
+from nonebot.matcher import Matcher, current_matcher
 from sqlalchemy import URL, Table, MetaData, make_url
+from sqlalchemy.log import Identified, _qual_logger_name_for_cls
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from nonebot import logger, require, get_driver, get_plugin_by_module_name
 
 from . import migrate
-from .config import Config
-from .utils import LoguruHandler, StreamToLogger
+from .param import ORMParam
+from .config import Config, plugin_config
+from .utils import LoguruHandler, StreamToLogger, get_subclasses
 
 if sys.version_info >= (3, 10):
     from typing import Annotated
@@ -36,28 +42,11 @@ __all__ = (
     "Model",
     # param
     "SQLDepends",
-    "ORMParam",
     # config
     "Config",
-    "config",
+    "plugin_config",
     # migrate
     "AlembicConfig",
-    "list_templates",
-    "init",
-    "revision",
-    "check",
-    "merge",
-    "upgrade",
-    "downgrade",
-    "sync",
-    "show",
-    "history",
-    "heads",
-    "branches",
-    "current",
-    "stamp",
-    "edit",
-    "ensure_version",
 )
 __plugin_meta__ = PluginMetadata(
     name="nonebot-plugin-orm",
@@ -67,7 +56,6 @@ __plugin_meta__ = PluginMetadata(
     homepage="https://github.com/nonebot/plugin-orm",
     config=Config,
 )
-
 
 _binds: dict[type[Model], AsyncEngine]
 _engines: dict[str, AsyncEngine]
@@ -230,9 +218,24 @@ def _init_logger():
         l.setLevel(level)
 
 
-from .model import *
-from .param import *
-from .config import *
-from .migrate import *
-
 _init_logger()
+
+
+def _init_param():
+    for cls in (Rule, Permission):
+        cls.HANDLER_PARAM_TYPES.insert(-1, ORMParam)
+
+    Matcher.HANDLER_PARAM_TYPES = Matcher.HANDLER_PARAM_TYPES[:-1] + (
+        ORMParam,
+        DefaultParam,
+    )
+
+
+_init_param()
+
+
+from .model import Model as Model
+from .config import Config as Config
+from .param import SQLDepends as SQLDepends
+from .config import plugin_config as plugin_config
+from .migrate import AlembicConfig as AlembicConfig

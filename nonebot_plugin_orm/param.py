@@ -7,13 +7,10 @@ from inspect import Parameter, isclass
 from typing_extensions import Annotated
 from typing import Any, Tuple, Iterator, Sequence, AsyncIterator, cast
 
-from nonebot.rule import Rule
-from nonebot.matcher import Matcher
 from pydantic.fields import FieldInfo
 from nonebot.dependencies import Param
-from nonebot.permission import Permission
+from nonebot.params import DependParam
 from pydantic.typing import get_args, get_origin
-from nonebot.params import DependParam, DefaultParam
 from sqlalchemy import Row, Result, ScalarResult, select
 from sqlalchemy.sql.selectable import ExecutableReturnsRows
 from sqlalchemy.ext.asyncio import AsyncResult, AsyncScalarResult
@@ -179,12 +176,3 @@ class ORMParam(DependParam):
     @classmethod
     def _check_parameterless(cls, *_) -> Param | None:
         return
-
-
-for cls in (Rule, Permission):
-    cls.HANDLER_PARAM_TYPES.insert(-1, ORMParam)
-
-Matcher.HANDLER_PARAM_TYPES = Matcher.HANDLER_PARAM_TYPES[:-1] + (
-    ORMParam,
-    DefaultParam,
-)
