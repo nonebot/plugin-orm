@@ -310,7 +310,9 @@ def _move_run_scripts(config: AlembicConfig, script: ScriptDirectory, current) -
         Path(sc.path) for sc in script.walk_revisions(base="base", head=current)
     )
     shutil.rmtree(_data_dir / "migrations", ignore_errors=True)
-    shutil.copytree(config._temp_dir, _data_dir / "migrations", ignore=ignore)
+    shutil.copytree(
+        config._temp_dir, _data_dir / "migrations", ignore=ignore, dirs_exist_ok=True
+    )
 
 
 def list_templates(config: AlembicConfig) -> None:
