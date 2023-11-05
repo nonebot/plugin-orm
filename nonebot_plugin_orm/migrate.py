@@ -176,7 +176,7 @@ class AlembicConfig(Config):
             plugin_name = ""
         else:
             self.print_stdout(
-                f'无法找到 {plugin_name or "<default>"} 对应的版本目录，忽略 "{script.path}"',
+                f'无法找到 {plugin_name or "<default>"} 对应的版本目录, 忽略 "{script.path}"',
                 fg="yellow",
             )
             return script_path
@@ -307,7 +307,7 @@ def use_tempdir(
 
 
 def list_templates(config: AlembicConfig) -> None:
-    """列出所有可用的模板。
+    """列出所有可用的模板.
 
     参数:
         config: `AlembicConfig` 对象
@@ -320,7 +320,7 @@ def list_templates(config: AlembicConfig) -> None:
 
         config.print_stdout(f"{tempname.name} - {synopsis}")
 
-    config.print_stdout('\n可以通过 "init" 命令使用模板，例如：')
+    config.print_stdout('\n可以通过 "init" 命令使用模板, 例如: ')
     config.print_stdout("\n  nb orm init --template generic ./scripts")
 
 
@@ -330,19 +330,19 @@ def init(
     template: str = "generic",
     package: bool = False,
 ) -> None:
-    """初始化脚本目录。
+    """初始化脚本目录.
 
     参数:
         config: `AlembicConfig` 对象
         directory: 目标目录路径
         template: 使用的迁移环境模板
-        package: 为 True 时，在脚本目录和版本目录中创建 `__init__.py` 文件
+        package: 为 True 时, 在脚本目录和版本目录中创建 `__init__.py` 脚本
     """
 
     if (
         directory.is_dir()
         and next(directory.iterdir(), False)
-        and not click.confirm(f'目录 "{directory}" 已存在并且不为空，是否继续初始化？')
+        and not click.confirm(f'目录 "{directory}" 已存在并且不为空, 是否继续初始化?')
     ):
         raise click.BadParameter(f'目录 "{directory}" 已存在并且不为空', param_hint="DIRECTORY")
 
@@ -372,19 +372,19 @@ def revision(
     depends_on: str | None = None,
     process_revision_directives: ProcessRevisionDirectiveFn | None = None,
 ) -> Iterable[Script]:
-    """创建一个新修订文件。
+    """创建一个新迁移脚本.
 
     参数:
         config: `AlembicConfig` 对象
-        message: 修订的描述
-        sql: 是否以 SQL 的形式输出修订脚本
-        head: 修订的基准版本, 提供了 branch_label 时默认为 'base', 否则默认为 'head'
-        splice: 是否将修订作为一个新的分支的头; 当 `head` 不是一个分支的头时, 此项必须为 `True`
-        branch_label: 修订的分支标签
-        version_path: 存放修订文件的目录
-        rev_id: 修订的 ID
-        depends_on: 修订的依赖
-        process_revision_directives: 修订的处理函数, 参见: `alembic.EnvironmentContext.configure.process_revision_directives`
+        message: 迁移的描述
+        sql: 是否以 SQL 的形式输出迁移脚本
+        head: 迁移的基准版本, 提供了 branch_label 时默认为 'base', 否则默认为 'head'
+        splice: 是否将迁移作为一个新的分支的头; 当 `head` 不是一个分支的头时, 此项必须为 `True`
+        branch_label: 迁移的分支标签
+        version_path: 存放迁移脚本的目录
+        rev_id: 迁移的 ID
+        depends_on: 迁移的依赖
+        process_revision_directives: 迁移的处理函数, 参见: `alembic.EnvironmentContext.configure.process_revision_directives`
     """
     from . import _plugins
 
@@ -398,7 +398,7 @@ def revision(
             "version_locations", f"{version_location}{pathsep}{version_path}"
         )
         logger.warning(
-            f'临时将目录 "{version_path}" 添加到版本目录中，请稍后将其添加到 ALEMBIC_VERSION_LOCATIONS 中'
+            f'临时将目录 "{version_path}" 添加到版本目录中, 请稍后将其添加到 ALEMBIC_VERSION_LOCATIONS 中'
         )
     elif branch_label in _plugins:
         version_path = (
@@ -438,7 +438,7 @@ def revision(
             rev: tuple[str, ...], context: MigrationContext
         ) -> tuple[()]:
             if set(script.get_revisions(rev)) != set(script.get_revisions("heads")):
-                raise click.UsageError("目标数据库未更新到最新修订")
+                raise click.UsageError("目标数据库未更新到最新迁移. 请通过 `nb orm upgrade` 升级数据库后重试.")
             revision_context.run_autogenerate(rev, context)
             return ()
 
@@ -456,7 +456,7 @@ def revision(
 
 
 def check(config: AlembicConfig) -> None:
-    """检查数据库是否与模型定义一致。
+    """检查数据库是否与模型定义一致.
 
     参数:
         config: `AlembicConfig` 对象
@@ -485,7 +485,7 @@ def check(config: AlembicConfig) -> None:
         rev: tuple[str, ...], context: MigrationContext
     ) -> tuple[()]:
         if set(script.get_revisions(rev)) != set(script.get_revisions("heads")):
-            raise click.UsageError("目标数据库未更新到最新修订")
+            raise click.UsageError("目标数据库未更新到最新迁移. 请通过 `nb orm upgrade` 升级数据库后重试.")
         revision_context.run_autogenerate(rev, context)
         return ()
 
@@ -499,12 +499,10 @@ def check(config: AlembicConfig) -> None:
     ):
         script.run_env()
 
-    # the revision_context now has MigrationScript structure(s) present.
-
     migration_script = revision_context.generated_revisions[-1]
     diffs = cast(UpgradeOps, migration_script.upgrade_ops).as_diffs()
     if diffs:
-        raise click.UsageError(f"检测到新的升级操作：{diffs}")
+        raise click.UsageError(f"检测到新的升级操作:\n{pformat(diffs)}")
     else:
         config.print_stdout("没有检测到新的升级操作")
 
@@ -517,14 +515,14 @@ def merge(
     branch_label: str | None = None,
     rev_id: str | None = None,
 ) -> Iterable[Script]:
-    """合并多个修订。创建一个新的修订文件。
+    """合并多个迁移. 创建一个新的迁移脚本.
 
     参数:
         config: `AlembicConfig` 对象
-        revisions: 要合并的修订
-        message: 修订的描述
-        branch_label: 修订的分支标签
-        rev_id: 修订的 ID
+        revisions: 要合并的迁移
+        message: 迁移的描述
+        branch_label: 迁移的分支标签
+        rev_id: 迁移的 ID
     """
 
     script = ScriptDirectory.from_config(config)
@@ -559,12 +557,12 @@ def upgrade(
     sql: bool = False,
     tag: str | None = None,
 ) -> None:
-    """升级到较新版本。
+    """升级到较新版本.
 
     参数:
         config: `AlembicConfig` 对象
-        revision: 目标修订
-        sql: 是否以 SQL 的形式输出修订脚本
+        revision: 目标迁移
+        sql: 是否以 SQL 的形式输出迁移脚本
         tag: 一个任意的字符串, 可在自定义的 `env.py` 中通过 `alembic.EnvironmentContext.get_tag_argument` 获得
     """
 
@@ -576,7 +574,7 @@ def upgrade(
     starting_rev = None
     if ":" in revision:
         if not sql:
-            raise click.BadParameter("不允许在非 --sql 模式下使用修订范围", param_hint="REVISION")
+            raise click.BadParameter("不允许在非 --sql 模式下使用迁移范围", param_hint="REVISION")
         starting_rev, revision = revision.split(":", 2)
 
     @return_progressbar
@@ -601,12 +599,12 @@ def downgrade(
     sql: bool = False,
     tag: str | None = None,
 ) -> None:
-    """回退到先前版本。
+    """回退到先前版本.
 
     参数:
         config: `AlembicConfig` 对象
-        revision: 目标修订
-        sql: 是否以 SQL 的形式输出修订脚本
+        revision: 目标迁移
+        sql: 是否以 SQL 的形式输出迁移脚本
         tag: 一个任意的字符串, 可在自定义的 `env.py` 中通过 `alembic.EnvironmentContext.get_tag_argument` 获得
     """
 
@@ -614,11 +612,11 @@ def downgrade(
     starting_rev = None
     if ":" in revision:
         if not sql:
-            raise click.BadParameter("不允许在非 --sql 模式下使用修订范围", param_hint="REVISION")
+            raise click.BadParameter("不允许在非 --sql 模式下使用迁移范围", param_hint="REVISION")
         starting_rev, revision = revision.split(":", 2)
     elif sql:
         raise click.BadParameter(
-            "--sql 模式下降级必须指定修订范围 <fromrev>:<torev>", param_hint="REVISION"
+            "--sql 模式下降级必须指定迁移范围 <fromrev>:<torev>", param_hint="REVISION"
         )
 
     @return_progressbar
@@ -637,12 +635,12 @@ def downgrade(
         script.run_env()
 
 
-def sync(config: Config, revision: str | None = None):
-    """同步数据库模式 (仅用于开发)。
+def sync(config: AlembicConfig, revision: str | None = None):
+    """同步数据库模式 (仅用于开发).
 
     参数:
         config: `AlembicConfig` 对象
-        revision: 目标修订, 如果不提供则与当前模型同步
+        revision: 目标迁移, 如果不提供则与当前模型同步
     """
     script = ScriptDirectory.from_config(config)
 
@@ -694,11 +692,11 @@ def sync(config: Config, revision: str | None = None):
 
 
 def show(config: AlembicConfig, revs: str | Sequence[str] = "current") -> None:
-    """显示修订的信息。
+    """显示迁移的信息.
 
     参数:
         config: `AlembicConfig` 对象
-        revs: 目标修订范围
+        revs: 目标迁移范围
     """
 
     script = ScriptDirectory.from_config(config)
@@ -721,13 +719,13 @@ def history(
     verbose: bool = False,
     indicate_current: bool = False,
 ) -> None:
-    """显示修订的历史。
+    """显示迁移的历史.
 
     参数:
         config: `AlembicConfig` 对象
-        rev_range: 修订范围
+        rev_range: 迁移范围
         verbose: 是否显示详细信息
-        indicate_current: 指示出当前修订
+        indicate_current: 指示出当前迁移
     """
 
     script = ScriptDirectory.from_config(config)
@@ -785,12 +783,12 @@ def history(
 def heads(
     config: AlembicConfig, verbose: bool = False, resolve_dependencies: bool = False
 ) -> None:
-    """显示所有的分支头。
+    """显示所有的分支头.
 
     参数:
         config: `AlembicConfig` 对象
         verbose: 是否显示详细信息
-        resolve_dependencies: 是否将依赖的修订视作父修订
+        resolve_dependencies: 是否将依赖的迁移视作父迁移
     """
 
     script = ScriptDirectory.from_config(config)
@@ -806,7 +804,7 @@ def heads(
 
 
 def branches(config: AlembicConfig, verbose: bool = False) -> None:
-    """显示所有的分支。
+    """显示所有的分支.
 
     参数:
         config: `AlembicConfig` 对象
@@ -834,7 +832,7 @@ def branches(config: AlembicConfig, verbose: bool = False) -> None:
 
 
 def current(config: AlembicConfig, verbose: bool = False) -> None:
-    """显示当前的修订。
+    """显示当前的迁移.
 
     参数:
         config: `AlembicConfig` 对象
@@ -865,13 +863,13 @@ def stamp(
     tag: str | None = None,
     purge: bool = False,
 ) -> None:
-    """将数据库标记为特定的修订版本，不运行任何迁移。
+    """将数据库标记为特定的迁移版本, 不运行任何迁移.
 
     参数:
         config: `AlembicConfig` 对象
-        revisions: 目标修订
-        sql: 是否以 SQL 的形式输出修订脚本
-        tag: 一个任意的字符串，可在自定义的 `env.py` 中通过 `alembic.EnvironmentContext.get_tag_argument` 获得
+        revisions: 目标迁移
+        sql: 是否以 SQL 的形式输出迁移脚本
+        tag: 一个任意的字符串, 可在自定义的 `env.py` 中通过 `alembic.EnvironmentContext.get_tag_argument` 获得
         purge: 是否在标记前清空数据库版本表
     """
 
@@ -890,7 +888,7 @@ def stamp(
                         starting_rev = srev
                     else:
                         raise click.BadParameter(
-                            "--sql 模式下标记操作仅支持一个起始修订", param_hint="REVISIONS"
+                            "--sql 模式下标记操作仅支持一个起始迁移", param_hint="REVISIONS"
                         )
             destination_revs.append(revision)
     else:
@@ -912,13 +910,12 @@ def stamp(
         script.run_env()
 
 
-@use_tempdir
 def edit(config: AlembicConfig, rev: str = "current") -> None:
-    """使用 `$EDITOR` 编辑修订文件。
+    """使用 `$EDITOR` 编辑迁移脚本.
 
     参数:
         config: `AlembicConfig` 对象
-        rev: 目标修订
+        rev: 目标迁移
     """
 
     script = ScriptDirectory.from_config(config)
@@ -927,7 +924,7 @@ def edit(config: AlembicConfig, rev: str = "current") -> None:
 
         def edit_current(rev: tuple[str, ...], _) -> tuple[()]:
             if not rev:
-                raise click.UsageError("当前没有修订")
+                raise click.UsageError("当前没有迁移")
 
             for sc in cast(Tuple[Script], script.get_revisions(rev)):
                 script_path = config.move_script(sc)
@@ -941,7 +938,7 @@ def edit(config: AlembicConfig, rev: str = "current") -> None:
         revs = cast(Tuple[Script, ...], script.get_revisions(rev))
 
         if not revs:
-            raise click.BadParameter(f'没有 "{rev}" 指示的修订文件')
+            raise click.BadParameter(f'没有 "{rev}" 指示的迁移脚本')
 
         for sc in cast(Tuple[Script], revs):
             script_path = config.move_script(sc)
@@ -949,11 +946,11 @@ def edit(config: AlembicConfig, rev: str = "current") -> None:
 
 
 def ensure_version(config: AlembicConfig, sql: bool = False) -> None:
-    """创建版本表。
+    """创建版本表.
 
     参数:
         config: `AlembicConfig` 对象
-        sql: 是否以 SQL 的形式输出修订脚本
+        sql: 是否以 SQL 的形式输出迁移脚本
     """
 
     script = ScriptDirectory.from_config(config)

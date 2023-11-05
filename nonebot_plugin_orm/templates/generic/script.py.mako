@@ -1,7 +1,7 @@
 """${message}
 
-修订 ID: ${up_revision}
-父修订: ${down_revision | comma,n}
+迁移 ID: ${up_revision}
+父迁移: ${down_revision | comma,n}
 创建时间: ${create_date}
 
 """

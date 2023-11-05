@@ -84,9 +84,13 @@ async def init_orm() -> None:
 
     with migrate.AlembicConfig(stdout=StreamToLogger()) as alembic_config:
         if plugin_config.alembic_startup_check:
-            await greenlet_spawn(migrate.check, alembic_config)
+            try:
+                await greenlet_spawn(migrate.check, alembic_config)
+            except click.UsageError:
+                logger.error("启动检查失败")
+                raise
         else:
-            logger.warning("跳过启动检查，正在同步数据库模式...")
+            logger.warning("跳过启动检查, 正在同步数据库模式...")
             await greenlet_spawn(migrate.sync, alembic_config)
 
 
@@ -171,7 +175,8 @@ def _init_engines():
         from nonebot_plugin_localstore import get_data_file
     except (ImportError, RuntimeError):
         raise ValueError(
-            '必须指定一个默认数据库引擎 (SQLALCHEMY_DATABASE_URL 或 SQLALCHEMY_BINDS[""])'
+            '必须指定一个默认数据库 (SQLALCHEMY_DATABASE_URL 或 SQLALCHEMY_BINDS[""]). '
+            "可以通过 `pip install nonebot-plugin-orm[default]` 获得开箱即用的数据库配置."
         ) from None
 
     _engines[""] = _create_engine(

@@ -90,18 +90,18 @@ Options:
 Commands:
   branches        显示所有的分支。
   check           检查数据库是否与模型定义一致。
-  current         显示当前的修订。
+  current         显示当前的迁移。
   downgrade       回退到先前版本。
-  edit            使用 $EDITOR 编辑修订文件。
+  edit            使用 $EDITOR 编辑迁移脚本。
   ensure_version  创建版本表。
   heads           显示所有的分支头。
-  history         显示修订的历史。
+  history         显示迁移的历史。
   init            初始化脚本目录。
   list_templates  列出所有可用的模板。
-  merge           合并多个修订。创建一个新的修订文件。
-  revision        创建一个新修订文件。
-  show            显示修订的信息。
-  stamp           将数据库标记为特定的修订版本，不运行任何迁移。
+  merge           合并多个迁移。创建一个新的迁移脚本。
+  revision        创建一个新迁移脚本。
+  show            显示迁移的信息。
+  stamp           将数据库标记为特定的迁移版本，不运行任何迁移。
   upgrade         升级到较新版本。
 ```
 
