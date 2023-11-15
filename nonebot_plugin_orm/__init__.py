@@ -4,6 +4,7 @@ import sys
 import logging
 from typing import Any
 from asyncio import gather
+from argparse import Namespace
 from operator import methodcaller
 from collections.abc import AsyncGenerator
 from functools import wraps, partial, lru_cache
@@ -74,8 +75,12 @@ _driver = get_driver()
 async def init_orm() -> None:
     _init_orm()
 
-    with migrate.AlembicConfig(stdout=StreamToLogger()) as alembic_config:
+    cmd_opts = Namespace()
+    with migrate.AlembicConfig(
+        stdout=StreamToLogger(), cmd_opts=cmd_opts
+    ) as alembic_config:
         if plugin_config.alembic_startup_check:
+            cmd_opts.cmd = (migrate.check, [], [])
             try:
                 await greenlet_spawn(migrate.check, alembic_config)
             except click.UsageError:
@@ -83,6 +88,7 @@ async def init_orm() -> None:
                 raise
         else:
             logger.warning("跳过启动检查, 正在同步数据库模式...")
+            cmd_opts.cmd = (migrate.sync, ["revision"], [])
             await greenlet_spawn(migrate.sync, alembic_config)
 
 
