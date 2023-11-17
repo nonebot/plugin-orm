@@ -425,8 +425,7 @@ def revision(
                 )
             )
         )
-
-    if version_path:
+    elif version_path:
         version_path = Path(version_path).resolve()
         version_locations = config.get_main_option("version_locations", "")
         pathsep = _SPLIT_ON_PATH[config.get_main_option("version_path_separator")]
