@@ -2,10 +2,9 @@ from __future__ import annotations
 
 import sys
 from itertools import repeat
+from typing import Any, cast
 from dataclasses import dataclass
 from inspect import Parameter, isclass
-from typing_extensions import Annotated
-from typing import Any, Tuple, Iterator, Sequence, AsyncIterator, cast
 
 from pydantic.fields import FieldInfo
 from nonebot.dependencies import Param
@@ -17,6 +16,15 @@ from sqlalchemy.ext.asyncio import AsyncResult, AsyncScalarResult
 
 from .model import Model
 from .utils import Option, methodcaller, compile_dependency, generic_issubclass
+
+if sys.version_info >= (3, 9):
+    from typing import Annotated
+    from collections.abc import Iterator, Sequence, AsyncIterator
+
+    Tuple = tuple
+else:
+    from typing_extensions import Annotated
+    from typing import Tuple, Iterator, Sequence, AsyncIterator
 
 __all__ = (
     "SQLDepends",

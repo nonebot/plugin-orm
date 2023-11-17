@@ -27,7 +27,7 @@ from .param import ORMParam
 from .config import Config, plugin_config
 from .utils import LoguruHandler, StreamToLogger, get_subclasses
 
-if sys.version_info >= (3, 10):
+if sys.version_info >= (3, 9):
     from typing import Annotated
 else:
     from typing_extensions import Annotated

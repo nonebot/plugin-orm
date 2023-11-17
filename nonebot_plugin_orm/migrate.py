@@ -7,10 +7,9 @@ import inspect
 from pathlib import Path
 from pprint import pformat
 from argparse import Namespace
-from operator import methodcaller
+from typing import Any, TextIO, cast
 from tempfile import TemporaryDirectory
 from configparser import DuplicateSectionError
-from typing import Any, Set, Tuple, TextIO, cast
 from contextlib import ExitStack, suppress, contextmanager
 from collections.abc import Mapping, Iterable, Sequence, Generator
 
@@ -35,11 +34,14 @@ from alembic.autogenerate.api import (
 
 from .utils import is_editable, return_progressbar
 
-if sys.version_info >= (3, 12):
+if sys.version_info >= (3, 11):
     from typing import Self
-    from importlib.resources import files, as_file
 else:
     from typing_extensions import Self
+
+if sys.version_info >= (3, 12):
+    from importlib.resources import files, as_file
+else:
     from importlib_resources import files, as_file
 
 
