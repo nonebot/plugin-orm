@@ -3,7 +3,7 @@ from __future__ import annotations
 from alembic import context
 from sqlalchemy.sql.schema import SchemaItem
 
-from nonebot_plugin_orm import migrate
+from . import migrate
 
 
 def no_drop_table(

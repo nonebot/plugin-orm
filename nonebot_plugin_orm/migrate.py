@@ -7,6 +7,7 @@ import inspect
 from pathlib import Path
 from pprint import pformat
 from argparse import Namespace
+from operator import attrgetter
 from typing import Any, TextIO, cast
 from tempfile import TemporaryDirectory
 from configparser import DuplicateSectionError
@@ -16,9 +17,9 @@ from collections.abc import Mapping, Iterable, Sequence, Generator
 import click
 import alembic
 import sqlalchemy
-from nonebot import logger
 from alembic.config import Config
 from sqlalchemy.util import asbool
+from nonebot import logger, get_plugin
 from sqlalchemy import MetaData, Connection
 from alembic.util.editor import open_in_editor
 from alembic.script import Script, ScriptDirectory
@@ -32,7 +33,7 @@ from alembic.autogenerate.api import (
     render_python_code,
 )
 
-from .utils import is_editable, return_progressbar
+from .utils import is_editable, get_parent_plugins, return_progressbar
 
 if sys.version_info >= (3, 11):
     from typing import Self
@@ -91,20 +92,28 @@ class AlembicConfig(Config):
     ) -> None:
         from . import _engines, _metadatas, plugin_config
 
-        if file_ is None and Path("alembic.ini").is_file():
-            file_ = "alembic.ini"
+        self._exit_stack = ExitStack()
+        self._plugin_version_locations = {}
+        self._temp_dir = Path(self._exit_stack.enter_context(TemporaryDirectory()))
+
+        if file_ is None and isinstance(plugin_config.alembic_config, Path):
+            file_ = plugin_config.alembic_config
 
         if plugin_config.alembic_script_location:
             script_location = plugin_config.alembic_script_location
         elif (
-            Path("migrations/env.py").is_file()
-            and Path("migrations/script.py.mako").is_file()
+            Path("migrations", "env.py").is_file()
+            and Path("migrations", "script.py.mako").is_file()
         ):
-            script_location = "migrations"
+            script_location = Path("migrations")
         elif len(_engines) == 1:
-            script_location = str(Path(__file__).parent / "templates" / "generic")
+            script_location = self._exit_stack.enter_context(
+                as_file(files(__name__) / "templates" / "generic")
+            )
         else:
-            script_location = str(Path(__file__).parent / "templates" / "multidb")
+            script_location = self._exit_stack.enter_context(
+                as_file(files(__name__) / "templates" / "multidb")
+            )
 
         super().__init__(
             file_,
@@ -129,10 +138,6 @@ class AlembicConfig(Config):
                 **attributes,
             },
         )
-
-        self._exit_stack = ExitStack()
-        self._plugin_version_locations = {}
-        self._temp_dir = Path(self._exit_stack.enter_context(TemporaryDirectory()))
 
         self._init_post_write_hooks()
         self._init_version_locations()
@@ -173,7 +178,7 @@ class AlembicConfig(Config):
         except ValueError:
             return script_path
 
-        plugin_name = (script_path.parent.parts or ("",))[0]
+        plugin_name = script_path.parent.name
         if version_location := self._plugin_version_locations.get(plugin_name):
             pass
         elif version_location := self._plugin_version_locations.get(""):
@@ -185,12 +190,8 @@ class AlembicConfig(Config):
             )
             return script_path
 
-        (version_location / script_path.relative_to(plugin_name).parent).mkdir(
-            parents=True, exist_ok=True
-        )
-        return shutil.move(
-            script.path, version_location / script_path.relative_to(plugin_name)
-        )
+        version_location.mkdir(parents=True, exist_ok=True)
+        return shutil.move(script.path, version_location)
 
     def _add_post_write_hook(self, name: str, **kwargs: str) -> None:
         self.set_section_option(
@@ -238,16 +239,17 @@ class AlembicConfig(Config):
 
         alembic_version_locations = plugin_config.alembic_version_locations
         if isinstance(alembic_version_locations, dict):
-            main_version_location = Path(
-                alembic_version_locations.get("", "migrations/versions")
-            )
+            main_version_location = alembic_version_locations.get("")
         else:
-            main_version_location = Path(
-                alembic_version_locations or "migrations/versions"
-            )
-        self._plugin_version_locations[""] = main_version_location
+            main_version_location = alembic_version_locations
 
-        version_locations = {_data_dir / "migrations": ""}
+        self._plugin_version_locations[""] = main_version_location or Path(
+            "migrations", "versions"
+        )
+
+        temp_version_locations: dict[Path, Path] = {
+            _data_dir / "migrations": self._temp_dir
+        }
 
         for plugin in _plugins.values():
             if plugin.metadata and (
@@ -257,39 +259,53 @@ class AlembicConfig(Config):
             else:
                 version_location = files(plugin.module) / "migrations"
 
-            if is_editable(plugin) and isinstance(version_location, Path):
+            temp_version_location = Path(
+                *map(attrgetter("name"), reversed(list(get_parent_plugins(plugin)))),
+            )
+
+            if (
+                not main_version_location
+                and is_editable(plugin)
+                and isinstance(version_location, Path)
+            ):
                 self._plugin_version_locations[plugin.name] = version_location
             else:
                 self._plugin_version_locations[plugin.name] = (
-                    main_version_location / plugin.name
+                    self._plugin_version_locations[""] / temp_version_location
                 )
 
-            version_locations[
+            temp_version_locations[
                 self._exit_stack.enter_context(as_file(version_location))
-            ] = plugin.name
+            ] = (self._temp_dir / temp_version_location)
 
         if isinstance(alembic_version_locations, dict):
-            for name, path in alembic_version_locations.items():
-                path = self._plugin_version_locations[name] = Path(path)
-                version_locations[path] = name
+            for plugin_name, version_location in alembic_version_locations.items():
+                if not (plugin := get_plugin(plugin_name)):
+                    continue
 
-        version_locations[main_version_location] = ""
+                version_location = Path(version_location)
+                self._plugin_version_locations[plugin_name] = version_location
+                temp_version_locations[version_location] = self._temp_dir.joinpath(
+                    *map(
+                        attrgetter("name"),
+                        reversed(list(get_parent_plugins(plugin))),
+                    )
+                )
 
-        for src, dst in version_locations.items():
+        temp_version_locations[self._plugin_version_locations[""]] = self._temp_dir
+
+        for src, dst in temp_version_locations.items():
+            dst.mkdir(parents=True, exist_ok=True)
             with suppress(FileNotFoundError, shutil.Error):
-                shutil.copytree(src, self._temp_dir / dst, dirs_exist_ok=True)
+                shutil.copytree(src, dst, dirs_exist_ok=True)
 
         pathsep = _SPLIT_ON_PATH[self.get_main_option("version_path_separator")]
         self.set_main_option(
             "version_locations",
             pathsep.join(
-                map(
-                    str,
-                    (
-                        self._temp_dir,
-                        *filter(methodcaller("is_dir"), self._temp_dir.iterdir()),
-                    ),
-                )
+                str(path)
+                for path in self._temp_dir.glob("**")
+                if path.name != "__pycache__"
             ),
         )
 
@@ -301,11 +317,10 @@ def _move_run_scripts(config: AlembicConfig, script: ScriptDirectory, current) -
         path_ = Path(path)
 
         return set(
-            filter(
-                lambda name: Path(name).suffix in {".py", ".pyc", ".pyo"}
-                and path_ / name not in run_script_path,
-                names,
-            )
+            name
+            for name in names
+            if Path(name).suffix in {".py", ".pyc", ".pyo"}
+            and path_ / name not in run_script_path
         )
 
     run_script_path = set(
@@ -377,7 +392,7 @@ def revision(
     head: str | None = None,
     splice: bool = False,
     branch_label: str | None = None,
-    version_path: Path | None = None,
+    version_path: str | Path | None = None,
     rev_id: str | None = None,
     depends_on: str | None = None,
     process_revision_directives: ProcessRevisionDirectiveFn | None = None,
@@ -401,17 +416,30 @@ def revision(
     if head is None:
         head = "base" if branch_label else "head"
 
+    if not version_path and branch_label and (plugin := _plugins.get(branch_label)):
+        version_path = str(
+            config._temp_dir.joinpath(
+                *map(
+                    attrgetter("name"),
+                    reversed(list(get_parent_plugins(plugin))),
+                )
+            )
+        )
+
     if version_path:
-        version_locations = config.get_main_option("version_locations")
+        version_path = Path(version_path).resolve()
+        version_locations = config.get_main_option("version_locations", "")
         pathsep = _SPLIT_ON_PATH[config.get_main_option("version_path_separator")]
-        config.set_main_option(
-            "version_locations", f"{version_locations}{pathsep}{version_path}"
-        )
-        logger.warning(
-            f'临时将目录 "{version_path}" 添加到版本目录中, 请稍后将其添加到 ALEMBIC_VERSION_LOCATIONS 中'
-        )
-    elif branch_label in _plugins:
-        version_path = config._temp_dir / branch_label
+
+        if version_path in (
+            Path(path).resolve() for path in version_locations.split(pathsep)
+        ):
+            config.set_main_option(
+                "version_locations", f"{version_locations}{pathsep}{version_path}"
+            )
+            logger.warning(
+                f'临时将目录 "{version_path}" 添加到版本目录中, 请稍后将其添加到 ALEMBIC_VERSION_LOCATIONS 中'
+            )
 
     script = ScriptDirectory.from_config(config)
 
@@ -740,7 +768,7 @@ def show(config: AlembicConfig, revs: str | Sequence[str] = "current") -> None:
         ):
             script.run_env()
 
-    for sc in cast(Tuple[Script], script.get_revisions(revs)):
+    for sc in cast("tuple[Script]", script.get_revisions(revs)):
         config.print_stdout(sc.log_entry)
 
 
@@ -828,7 +856,7 @@ def heads(
     else:
         heads = script.get_revisions(script.get_heads())
 
-    for rev in cast(Tuple[Script], heads):
+    for rev in cast("tuple[Script]", heads):
         config.print_stdout(
             rev.cmd_format(verbose, include_branches=True, tree_indicators=False)
         )
@@ -880,7 +908,7 @@ def current(config: AlembicConfig, verbose: bool = False) -> None:
                 "Current revision(s) for %s:",
                 cast(Connection, context.connection).engine.url.render_as_string(),
             )
-        for sc in cast(Set[Script], script.get_all_current(rev)):
+        for sc in cast("set[Script]", script.get_all_current(rev)):
             config.print_stdout(sc.cmd_format(verbose))
 
         return ()
@@ -960,7 +988,7 @@ def edit(config: AlembicConfig, rev: str = "current") -> None:
             if not rev:
                 raise click.UsageError("当前没有迁移")
 
-            for sc in cast(Tuple[Script], script.get_revisions(rev)):
+            for sc in cast("tuple[Script]", script.get_revisions(rev)):
                 script_path = config.move_script(sc)
                 open_in_editor(str(script_path))
 
@@ -969,12 +997,12 @@ def edit(config: AlembicConfig, rev: str = "current") -> None:
         with EnvironmentContext(config, script, fn=edit_current):
             script.run_env()
     else:
-        revs = cast(Tuple[Script, ...], script.get_revisions(rev))
+        revs = cast("tuple[Script, ...]", script.get_revisions(rev))
 
         if not revs:
             raise click.BadParameter(f'没有 "{rev}" 指示的迁移脚本')
 
-        for sc in cast(Tuple[Script], revs):
+        for sc in cast("tuple[Script]", revs):
             script_path = config.move_script(sc)
             open_in_editor(str(script_path))
 

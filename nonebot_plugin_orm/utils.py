@@ -11,8 +11,8 @@ from contextlib import suppress
 from typing import Any, TypeVar
 from typing_extensions import Annotated
 from dataclasses import field, dataclass
-from collections.abc import Callable, Iterable
 from inspect import Parameter, Signature, isclass
+from collections.abc import Callable, Iterable, Generator
 from importlib.metadata import Distribution, PackageNotFoundError, distribution
 
 import click
@@ -218,16 +218,19 @@ def return_progressbar(func: Callable[_P, Iterable[_T]]) -> Callable[_P, Iterabl
     return wrapper
 
 
+def get_parent_plugins(plugin: Plugin | None) -> Generator[Plugin, Any, None]:
+    while plugin:
+        yield plugin
+        plugin = plugin.parent_plugin
+
+
 pkgs = packages_distributions()
 
 
 def is_editable(plugin: Plugin) -> bool:
-    """Check if the distribution is installed in editable mode"""
-    while plugin.parent_plugin:
-        plugin = plugin.parent_plugin
+    *_, plugin = get_parent_plugins(plugin)
 
     path = files(plugin.module)
-
     if not isinstance(path, Path) or "site-packages" in path.parts:
         return False
 
