@@ -51,29 +51,84 @@ pip install nonebot-plugin-orm[aiosqlite]
 
 ### ORM
 
+#### Model 依赖注入
+
 ```python
-from nonebot import require
+from nonebot.adapters import Event
 from nonebot.params import Depends
+from nonebot import require, on_message
 from sqlalchemy.orm import Mapped, mapped_column
-from sqlalchemy.ext.asyncio import async_scoped_session
 
 require("nonebot_plugin_orm")
+from nonebot_plugin_orm import Model, async_scoped_session
 
-from nonebot_plugin_orm import Model, get_scoped_session
+matcher = on_message()
 
 
-class MyModel(Model):
+def get_user_id(event: Event) -> str:
+    return event.get_user_id()
+
+
+class User(Model):
     id: Mapped[int] = mapped_column(primary_key=True)
-    data: Mapped[str]
+    user_id: Mapped[str] = Depends(get_user_id)
 
 
 @matcher.handle()
-async def handler(session: async_scoped_session = Depends(get_scoped_session)):
-    session.add(MyModel(data="data"))
-    await session.commit()
+async def _(event: Event, sess: async_scoped_session, user: User | None):
+    if user:
+        await matcher.finish(f"Hello, {user.user_id}")
+
+    sess.add(User(user_id=get_user_id(event)))
+    await sess.commit()
+    await matcher.finish("Hello, new user!")
+```
+
+#### SQL 依赖注入
+
+```python
+from sqlalchemy import select
+from nonebot.adapters import Event
+from nonebot.params import Depends
+from nonebot import require, on_message
+from sqlalchemy.orm import Mapped, mapped_column
+
+require("nonebot_plugin_orm")
+from nonebot_plugin_orm import Model, SQLDepends, async_scoped_session
+
+matcher = on_message()
+
+
+def get_session_id(event: Event) -> str:
+    return event.get_session_id()
+
+
+class Session(Model):
+    id: Mapped[int] = mapped_column(primary_key=True)
+    session_id: Mapped[str]
+
+
+@matcher.handle()
+async def _(
+    event: Event,
+    sess: async_scoped_session,
+    session: Session
+    | None = SQLDepends(
+        select(Session).where(Session.session_id == Depends(get_session_id))
+    ),
+):
+    if session:
+        await matcher.finish(f"Hello, {session.session_id}")
+
+    sess.add(Session(session_id=get_session_id(event)))
+    await sess.commit()
+    await matcher.finish("Hello, new user!")
+
 ```
 
 ### CLI
+
+依赖 [NB CLI](https://github.com/nonebot/nb-cli)
 
 ```properties
 $ nb orm
