@@ -341,7 +341,7 @@ def list_templates(config: AlembicConfig) -> None:
 
     config.print_stdout("可用的模板：\n")
     for tempname in Path(config.get_template_directory()).iterdir():
-        with (tempname / "README").open() as readme:
+        with (tempname / "README").open(encoding="utf-8") as readme:
             synopsis = readme.readline().rstrip()
 
         config.print_stdout(f"{tempname.name} - {synopsis}")
