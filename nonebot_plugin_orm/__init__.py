@@ -111,6 +111,10 @@ def _init_orm():
         lambda: id(current_event.get(None)),
     )
 
+    # XXX: workaround for https://github.com/nonebot/nonebot2/issues/2475
+    event_postprocessor(_clear_scoped_session)
+    run_postprocessor(_close_scoped_session)
+
 
 @wraps(lambda: None)  # NOTE: for dependency injection
 def get_session(**local_kw: Any) -> sa_async.AsyncSession:
@@ -135,13 +139,13 @@ async_scoped_session = Annotated[
 ]
 
 
-@event_postprocessor
+# @event_postprocessor
 def _clear_scoped_session(event: Event) -> None:
     with suppress(KeyError):
         del _scoped_sessions.registry[id(event)]
 
 
-@run_postprocessor
+# @run_postprocessor
 async def _close_scoped_session(event: Event, matcher: Matcher) -> None:
     with suppress(KeyError):
         session: sa_async.AsyncSession = _scoped_sessions.registry[
