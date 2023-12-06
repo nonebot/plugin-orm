@@ -166,7 +166,7 @@ def _create_engine(engine: str | URL | dict[str, Any] | AsyncEngine) -> AsyncEng
     else:
         url = engine
 
-    return create_async_engine(make_url(url), **options)
+    return create_async_engine(url, **options)
 
 
 def _init_engines():
@@ -204,7 +204,7 @@ def _init_table():
     _plugins = {}
 
     _get_plugin_by_module_name = lru_cache(None)(get_plugin_by_module_name)
-    for model in get_subclasses(Model):
+    for model in set(get_subclasses(Model)):
         table: Table | None = getattr(model, "__table__", None)
 
         if table is None or (bind_key := table.info.get("bind_key")) is None:
@@ -229,7 +229,7 @@ def _init_logger():
         "sqlalchemy": log_level,
         **{
             _qual_logger_name_for_cls(cls): echo_log_level
-            for cls in get_subclasses(Identified)
+            for cls in set(get_subclasses(Identified))
         },
     }
 

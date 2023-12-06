@@ -4,6 +4,7 @@ import sys
 from itertools import repeat
 from typing import Any, cast
 from dataclasses import dataclass
+from operator import methodcaller
 from inspect import Parameter, isclass
 
 from pydantic.fields import FieldInfo
@@ -15,7 +16,7 @@ from sqlalchemy.sql.selectable import ExecutableReturnsRows
 from sqlalchemy.ext.asyncio import AsyncResult, AsyncScalarResult
 
 from .model import Model
-from .utils import Option, methodcaller, compile_dependency, generic_issubclass
+from .utils import Option, compile_dependency, generic_issubclass
 
 if sys.version_info >= (3, 9):
     from typing import Annotated

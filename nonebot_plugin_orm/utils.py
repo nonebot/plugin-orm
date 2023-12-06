@@ -9,6 +9,7 @@ from functools import wraps
 from itertools import repeat
 from contextlib import suppress
 from typing import Any, TypeVar
+from operator import methodcaller
 from typing_extensions import Annotated
 from dataclasses import field, dataclass
 from inspect import Parameter, Signature, isclass
@@ -95,29 +96,10 @@ class Option:
     calls: list[methodcaller] = field(default_factory=list)
 
 
-class methodcaller:
-    __slots__ = ("_name", "_args", "_kwargs")
-
-    def __init__(self, name, /, *args, **kwargs):
-        self._name = name
-        if not isinstance(self._name, str):
-            raise TypeError("method name must be a string")
-        self._args = args
-        self._kwargs = kwargs
-
-    def __call__(self, obj):
-        return getattr(obj, self._name)(*self._args, **self._kwargs)
-
-    def __eq__(self, value: object, /) -> bool:
-        return isinstance(value, methodcaller) and all(
-            getattr(self, attr) == getattr(value, attr) for attr in self.__slots__
-        )
-
-
 def compile_dependency(statement: ExecutableReturnsRows, option: Option) -> Any:
     from . import async_scoped_session
 
-    async def dependency(*, __session: async_scoped_session, **params: Any):
+    async def __dependency(*, __session: async_scoped_session, **params: Any):
         if option.stream:
             result = await __session.stream(statement, params)
         else:
@@ -137,7 +119,7 @@ def compile_dependency(statement: ExecutableReturnsRows, option: Option) -> Any:
 
         return result
 
-    dependency.__signature__ = Signature(
+    __dependency.__signature__ = Signature(
         [
             Parameter(
                 "__session", Parameter.KEYWORD_ONLY, annotation=async_scoped_session
@@ -150,7 +132,7 @@ def compile_dependency(statement: ExecutableReturnsRows, option: Option) -> Any:
         ]
     )
 
-    return Depends(dependency)
+    return Depends(__dependency)
 
 
 def generic_issubclass(scls: Any, cls: Any) -> Any:
@@ -239,16 +221,16 @@ def is_editable(plugin: Plugin) -> bool:
     with suppress(PackageNotFoundError):
         dist = distribution(plugin.name.replace("_", "-"))
 
-    if not (dist or plugin.module.__file__ is None):
+    if not dist and plugin.module.__file__:
         path = Path(plugin.module.__file__)
         for name in pkgs.get(plugin.module_name.split(".")[0], ()):
             dist = distribution(name)
-            if path in map(methodcaller("locate"), dist.files or ()):
+            if path in (file.locate() for file in dist.files or ()):
                 break
         else:
             dist = None
 
-    if dist is None:
+    if not dist:
         return True
 
     # https://github.com/pdm-project/pdm/blob/fee1e6bffd7de30315e2134e19f9a6f58e15867c/src/pdm/utils.py#L361-L374
@@ -263,12 +245,10 @@ def is_editable(plugin: Plugin) -> bool:
     return direct_url_data.get("dir_info", {}).get("editable", False)
 
 
-def get_subclasses(cls: type[_T]) -> set[type[_T]]:
-    subclasses = set()
+def get_subclasses(cls: type[_T]) -> Generator[type[_T], None, None]:
+    yield from cls.__subclasses__()
     for subclass in cls.__subclasses__():
-        subclasses.add(subclass)
-        subclasses.update(get_subclasses(subclass))
-    return subclasses
+        yield from get_subclasses(subclass)
 
 
 if sys.version_info >= (3, 10):
