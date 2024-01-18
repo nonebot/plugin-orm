@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import asyncio
 from typing import cast
 
 from alembic import context
 from sqlalchemy import Connection
-from sqlalchemy.util import await_fallback
+from sqlalchemy.util import await_only
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from nonebot_plugin_orm.env import no_drop_table
@@ -81,4 +82,9 @@ async def run_migrations_online() -> None:
 if context.is_offline_mode():
     run_migrations_offline()
 else:
-    await_fallback(run_migrations_online())
+    coro = run_migrations_online()
+
+    try:
+        asyncio.run(coro)
+    except RuntimeError:
+        await_only(coro)

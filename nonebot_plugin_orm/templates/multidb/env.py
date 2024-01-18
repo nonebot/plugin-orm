@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import asyncio
 from typing import cast
+from contextlib import suppress
 
 from alembic import context
-from sqlalchemy.util import await_fallback
+from sqlalchemy.util import await_only
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncConnection
 from sqlalchemy import MetaData, Connection, TwoPhaseTransaction
 
@@ -124,4 +125,9 @@ async def run_migrations_online() -> None:
 if context.is_offline_mode():
     run_migrations_offline()
 else:
-    await_fallback(run_migrations_online())
+    coro = run_migrations_online()
+
+    with suppress(RuntimeError):
+        asyncio.run(coro)
+
+    await_only(coro)

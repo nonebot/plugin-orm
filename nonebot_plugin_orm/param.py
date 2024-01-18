@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import sys
 from itertools import repeat
-from typing import Any, cast
 from dataclasses import dataclass
 from operator import methodcaller
+from typing import Any, Type, cast
 from inspect import Parameter, isclass
 
 from pydantic.fields import FieldInfo
@@ -166,7 +166,7 @@ class ORMParam(DependParam):
         if depends_inner is not None:
             dependency = compile_dependency(depends_inner.dependency, option)
         elif all(map(isclass, models)) and all(map(issubclass, models, repeat(Model))):
-            models = cast(Tuple[Model, ...], models)
+            models = cast(Tuple[Type[Model], ...], models)
             dependency = compile_dependency(
                 select(*models).where(
                     *(
