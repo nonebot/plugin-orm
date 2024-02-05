@@ -113,7 +113,9 @@ def list_templates(*args, **kwargs) -> None:
     type=click.Path(file_okay=False, writable=True, resolve_path=True, path_type=Path),
 )
 @click.option("-t", "--template", default="generic", help="使用的迁移环境模板")
-@click.option("--package", is_flag=True, help="在脚本目录和版本目录中创建 __init__.py 文件")
+@click.option(
+    "--package", is_flag=True, help="在脚本目录和版本目录中创建 __init__.py 文件"
+)
 @update_cmd_opts
 def init(*args, **kwargs) -> None:
     """初始化脚本目录."""
