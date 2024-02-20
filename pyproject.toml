@@ -7,14 +7,14 @@ authors = [
     { name = "ProgramRipper", email = "programripper@foxmail.com" },
 ]
 dependencies = [
-    "alembic~=1.12",
+    "alembic~=1.13",
     "click~=8.1",
-    "importlib-metadata~=6.8; python_version < '3.10'",
-    "importlib-resources~=6.1; python_version < '3.12'",
-    "nonebot-plugin-localstore~=0.5",
-    "nonebot2~=2.1",
+    "importlib-metadata~=7.0; python_version < \"3.10\"",
+    "importlib-resources~=6.1; python_version < \"3.12\"",
+    "nonebot-plugin-localstore~=0.6",
+    "nonebot2~=2.2",
     "sqlalchemy~=2.0",
-    "typing-extensions~=4.8; python_version < '3.11'",
+    "typing-extensions~=4.9; python_version < \"3.11\"",
 ]
 requires-python = ">=3.8,<4.0"
 readme = "README.md"
@@ -27,15 +27,15 @@ repository = "https://github.com/nonebot/plugin-orm"
 documentation = "https://github.com/nonebot/plugin-orm"
 
 [project.optional-dependencies]
-default = ["aiosqlite~=0.19"]
-mysql = ["aiomysql~=0.2"]
-asyncmy = ["asyncmy~=0.2"]
-aiomysql = ["aiomysql~=0.2"]
-postgresql = ["psycopg[binary]~=3.1"]
-psycopg = ["psycopg[binary]~=3.1"]
-asyncpg = ["asyncpg~=0.28"]
-sqlite = ["aiosqlite~=0.19"]
-aiosqlite = ["aiosqlite~=0.19"]
+default = ["sqlalchemy[aiosqlite]"]
+mysql = ["sqlalchemy[aiomysql]"]
+asyncmy = ["sqlalchemy[asyncmy]"]
+aiomysql = ["sqlalchemy[aiomysql]"]
+postgresql = ["sqlalchemy[postgresql_psycopgbinary]"]
+psycopg = ["sqlalchemy[postgresql_psycopgbinary]"]
+asyncpg = ["sqlalchemy[postgresql_asyncpg]"]
+sqlite = ["sqlalchemy[aiosqlite]"]
+aiosqlite = ["sqlalchemy[aiosqlite]"]
 
 [project.entry-points.nb_scripts]
 orm = "nonebot_plugin_orm.__main__:main"
@@ -47,12 +47,15 @@ build-backend = "pdm.backend"
 [tool.pdm]
 [tool.pdm.dev-dependencies]
 dev = [
-    "aiosqlite~=0.19",
-    "black~=23.10",
-    "isort~=5.12",
+    "black~=24.2",
+    "importlib-metadata~=7.0",
+    "importlib-resources~=6.1",
+    "isort~=5.13",
     "nonemoji~=0.1",
     "pre-commit~=3.5",
-    "pycln~=2.3",
+    "pycln~=2.4",
+    "sqlalchemy[aiosqlite]",
+    "typing-extensions~=4.9",
 ]
 
 [tool.black]

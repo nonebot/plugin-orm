@@ -8,10 +8,10 @@ from pathlib import Path
 from functools import wraps
 from itertools import repeat
 from contextlib import suppress
-from typing import Any, TypeVar
 from operator import methodcaller
 from typing_extensions import Annotated
 from dataclasses import field, dataclass
+from typing import Any, TypeVar, Coroutine
 from inspect import Parameter, Signature, isclass
 from collections.abc import Callable, Iterable, Generator
 from importlib.metadata import Distribution, PackageNotFoundError, distribution
@@ -21,13 +21,7 @@ from nonebot.plugin import Plugin
 from nonebot.params import Depends
 from nonebot import logger, get_driver
 from sqlalchemy.sql.selectable import ExecutableReturnsRows
-from pydantic.typing import (
-    get_args,
-    is_union,
-    get_origin,
-    is_literal_type,
-    all_literal_values,
-)
+from nonebot.typing import origin_is_union, origin_is_literal, all_literal_values
 
 if sys.version_info >= (3, 9):
     from importlib.resources import files
@@ -35,11 +29,11 @@ else:
     from importlib_resources import files
 
 if sys.version_info >= (3, 10):
-    from typing import ParamSpec
+    from typing import ParamSpec, get_args, get_origin
     from importlib.metadata import packages_distributions
 else:
-    from typing_extensions import ParamSpec
     from importlib_metadata import packages_distributions
+    from typing_extensions import ParamSpec, get_args, get_origin
 
 
 _T = TypeVar("_T")
@@ -160,12 +154,12 @@ def generic_issubclass(scls: Any, cls: Any) -> Any:
     if cls_origin is Annotated:
         return generic_issubclass(scls, cls_args[0])
 
-    if is_union(scls_origin):
+    if origin_is_union(scls_origin):
         return all(map(generic_issubclass, scls_args, repeat(cls)))
-    if is_union(cls_origin):
+    if origin_is_union(cls_origin):
         return generic_issubclass(scls, cls_args)
 
-    if is_literal_type(scls) and is_literal_type(cls):
+    if origin_is_literal(scls) and origin_is_literal(cls):
         return set(all_literal_values(scls)) <= set(all_literal_values(cls))
 
     try:

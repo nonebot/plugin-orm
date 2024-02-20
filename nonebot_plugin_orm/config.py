@@ -3,8 +3,8 @@ from pathlib import Path
 from typing import Any, Union, Optional
 
 from sqlalchemy import URL
-from nonebot import get_driver
 from pydantic import BaseModel
+from nonebot import get_plugin_config
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from .migrate import AlembicConfig
@@ -34,4 +34,4 @@ class Config(BaseModel, arbitrary_types_allowed=True):
     alembic_startup_check: bool = True
 
 
-plugin_config = Config.parse_obj(get_driver().config)
+plugin_config = get_plugin_config(Config)

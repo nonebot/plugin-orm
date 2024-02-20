@@ -2,15 +2,14 @@ from __future__ import annotations
 
 import sys
 from itertools import repeat
+from typing import Any, cast
 from dataclasses import dataclass
 from operator import methodcaller
-from typing import Any, Type, cast
 from inspect import Parameter, isclass
 
 from pydantic.fields import FieldInfo
 from nonebot.dependencies import Param
 from nonebot.params import DependParam
-from pydantic.typing import get_args, get_origin
 from sqlalchemy import Row, Result, ScalarResult, select
 from sqlalchemy.sql.selectable import ExecutableReturnsRows
 from sqlalchemy.ext.asyncio import AsyncResult, AsyncScalarResult
@@ -18,14 +17,15 @@ from sqlalchemy.ext.asyncio import AsyncResult, AsyncScalarResult
 from .model import Model
 from .utils import Option, compile_dependency, generic_issubclass
 
-if sys.version_info >= (3, 9):
-    from typing import Annotated
+if sys.version_info >= (3, 10):
+    from typing import Annotated, get_args, get_origin
     from collections.abc import Iterator, Sequence, AsyncIterator
 
     Tuple = tuple
+    Type = type
 else:
-    from typing_extensions import Annotated
-    from typing import Tuple, Iterator, Sequence, AsyncIterator
+    from typing_extensions import Annotated, get_args, get_origin
+    from typing import Type, Tuple, Iterator, Sequence, AsyncIterator
 
 __all__ = (
     "SQLDepends",

@@ -6,15 +6,14 @@ from typing import TYPE_CHECKING, Any, ClassVar
 
 from sqlalchemy import Table, MetaData
 from nonebot import get_plugin_by_module_name
-from pydantic.typing import get_args, get_origin
 from sqlalchemy.orm import Mapped, DeclarativeBase
 
 from .utils import DependsInner, get_annotations
 
-if sys.version_info >= (3, 9):
-    from typing import Annotated
+if sys.version_info >= (3, 10):
+    from typing import Annotated, get_args, get_origin
 else:
-    from typing_extensions import Annotated
+    from typing_extensions import Annotated, get_args, get_origin
 
 __all__ = ("Model",)
 
