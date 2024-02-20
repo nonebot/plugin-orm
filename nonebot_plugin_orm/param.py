@@ -165,7 +165,9 @@ class ORMParam(DependParam):
 
         if depends_inner is not None:
             dependency = compile_dependency(depends_inner.dependency, option)
-        elif all(map(isclass, models)) and all(map(issubclass, models, repeat(Model))):
+        elif all(map(isclass, models)) and all(
+            map(issubclass, cast(Tuple[type, ...], models), repeat(Model))
+        ):
             models = cast(Tuple[Type[Model], ...], models)
             dependency = compile_dependency(
                 select(*models).where(
