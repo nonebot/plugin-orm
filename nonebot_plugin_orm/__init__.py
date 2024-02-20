@@ -23,7 +23,7 @@ from nonebot import logger, require, get_driver, get_plugin_by_module_name
 from . import migrate
 from .param import ORMParam
 from .config import Config, plugin_config
-from .utils import LoguruHandler, StreamToLogger, get_subclasses
+from .utils import LoguruHandler, StreamToLogger, coroutine, get_subclasses
 
 if sys.version_info >= (3, 9):
     from typing import Annotated
@@ -118,10 +118,12 @@ def get_session(**local_kw: Any) -> sa_async.AsyncSession:
         raise RuntimeError("nonebot-plugin-orm 未初始化") from None
 
 
-AsyncSession = Annotated[sa_async.AsyncSession, Depends(get_session)]
+# NOTE: NoneBot DI will run sync function in thread pool executor,
+# which is poor performance for this simple function, so we wrap it as a coroutine function.
+AsyncSession = Annotated[sa_async.AsyncSession, Depends(coroutine(get_session))]
 
 
-async def get_scoped_session() -> sa_async.async_scoped_session[sa_async.AsyncSession]:
+def get_scoped_session() -> sa_async.async_scoped_session[sa_async.AsyncSession]:
     try:
         return _scoped_sessions
     except NameError:
@@ -129,7 +131,8 @@ async def get_scoped_session() -> sa_async.async_scoped_session[sa_async.AsyncSe
 
 
 async_scoped_session = Annotated[
-    sa_async.async_scoped_session[sa_async.AsyncSession], Depends(get_scoped_session)
+    sa_async.async_scoped_session[sa_async.AsyncSession],
+    Depends(coroutine(get_scoped_session)),
 ]
 
 

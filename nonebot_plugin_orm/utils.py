@@ -251,6 +251,14 @@ def get_subclasses(cls: type[_T]) -> Generator[type[_T], None, None]:
         yield from get_subclasses(subclass)
 
 
+def coroutine(func: Callable[_P, _T]) -> Callable[_P, Coroutine[Any, Any, _T]]:
+    @wraps(func)
+    async def wrapper(*args: _P.args, **kwargs: _P.kwargs) -> _T:
+        return func(*args, **kwargs)
+
+    return wrapper
+
+
 if sys.version_info >= (3, 10):
     from inspect import get_annotations as get_annotations  # nopycln: import
 else:
