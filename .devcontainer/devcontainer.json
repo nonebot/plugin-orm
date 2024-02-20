@@ -2,7 +2,7 @@
   "name": "Default Linux Universal",
   "image": "mcr.microsoft.com/devcontainers/universal:2-linux",
   "features": {
-    "ghcr.io/devcontainers-contrib/features/pdm:2": {},
+    "ghcr.io/devcontainers-contrib/features/pdm:2": {}
   },
   "postCreateCommand": "pdm install && pdm run pre-commit install",
   "customizations": {
@@ -13,16 +13,16 @@
         "[python]": {
           "editor.defaultFormatter": "ms-python.black-formatter",
           "editor.codeActionsOnSave": {
-            "source.organizeImports": true,
-          },
+            "source.organizeImports": "explicit"
+          }
         },
         "files.exclude": {
-          "**/__pycache__": true,
+          "**/__pycache__": true
         },
         "files.watcherExclude": {
           "**/target/**": true,
-          "**/__pycache__": true,
-        },
+          "**/__pycache__": true
+        }
       },
       "extensions": [
         "ms-python.python",
