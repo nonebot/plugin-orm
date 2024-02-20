@@ -370,7 +370,9 @@ def init(
         and next(directory.iterdir(), False)
         and not click.confirm(f'目录 "{directory}" 已存在并且不为空, 是否继续初始化?')
     ):
-        raise click.BadParameter(f'目录 "{directory}" 已存在并且不为空', param_hint="DIRECTORY")
+        raise click.BadParameter(
+            f'目录 "{directory}" 已存在并且不为空', param_hint="DIRECTORY"
+        )
 
     template_dir = Path(config.get_template_directory()) / template
     if not template_dir.is_dir():
@@ -473,7 +475,9 @@ def revision(
             rev, context: MigrationContext
         ) -> Iterable[StampStep | RevisionStep]:
             if set(script.get_revisions(rev)) != set(script.get_revisions("heads")):
-                raise click.UsageError("目标数据库未更新到最新迁移. 请通过 `nb orm upgrade` 升级数据库后重试.")
+                raise click.UsageError(
+                    "目标数据库未更新到最新迁移. 请通过 `nb orm upgrade` 升级数据库后重试."
+                )
             revision_context.run_autogenerate(rev, context)
             return ()
 
@@ -519,7 +523,9 @@ def check(config: AlembicConfig) -> None:
         rev, context: MigrationContext
     ) -> Iterable[StampStep | RevisionStep]:
         if set(script.get_revisions(rev)) != set(script.get_revisions("heads")):
-            raise click.UsageError("目标数据库未更新到最新迁移. 请通过 `nb orm upgrade` 升级数据库后重试.")
+            raise click.UsageError(
+                "目标数据库未更新到最新迁移. 请通过 `nb orm upgrade` 升级数据库后重试."
+            )
         revision_context.run_autogenerate(rev, context)
         return ()
 
@@ -607,7 +613,9 @@ def upgrade(
     starting_rev = None
     if ":" in revision:
         if not sql:
-            raise click.BadParameter("不允许在非 --sql 模式下使用迁移范围", param_hint="REVISION")
+            raise click.BadParameter(
+                "不允许在非 --sql 模式下使用迁移范围", param_hint="REVISION"
+            )
         starting_rev, revision = revision.split(":", 2)
 
     @return_progressbar
@@ -646,7 +654,9 @@ def downgrade(
     starting_rev = None
     if ":" in revision:
         if not sql:
-            raise click.BadParameter("不允许在非 --sql 模式下使用迁移范围", param_hint="REVISION")
+            raise click.BadParameter(
+                "不允许在非 --sql 模式下使用迁移范围", param_hint="REVISION"
+            )
         starting_rev, revision = revision.split(":", 2)
     elif sql:
         raise click.BadParameter(
@@ -948,7 +958,8 @@ def stamp(
                         starting_rev = srev
                     else:
                         raise click.BadParameter(
-                            "--sql 模式下标记操作仅支持一个起始迁移", param_hint="REVISIONS"
+                            "--sql 模式下标记操作仅支持一个起始迁移",
+                            param_hint="REVISIONS",
                         )
             destination_revs.append(revision)
     else:
