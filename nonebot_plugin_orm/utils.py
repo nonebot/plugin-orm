@@ -11,9 +11,9 @@ from contextlib import suppress
 from operator import methodcaller
 from typing_extensions import Annotated
 from dataclasses import field, dataclass
-from typing import Any, TypeVar, Coroutine
 from inspect import Parameter, Signature, isclass
 from collections.abc import Callable, Iterable, Generator
+from typing import TYPE_CHECKING, Any, TypeVar, Coroutine
 from importlib.metadata import Distribution, PackageNotFoundError, distribution
 
 import click
@@ -34,6 +34,10 @@ if sys.version_info >= (3, 10):
 else:
     from importlib_metadata import packages_distributions
     from typing_extensions import ParamSpec, get_args, get_origin
+
+
+if TYPE_CHECKING:
+    from . import async_scoped_session
 
 
 _T = TypeVar("_T")
@@ -73,60 +77,67 @@ class StreamToLogger(StringIO):
         while frame and frame.f_code.co_name != "print_stdout":
             frame = frame.f_back
             depth += 1
-        depth += 1
 
         for line in buffer.rstrip().splitlines():
-            logger.opt(depth=depth).log(self._level, line.rstrip())
+            logger.opt(depth=depth + 1).log(self._level, line.rstrip())
 
     def flush(self):
         pass
 
 
-@dataclass
+@dataclass(unsafe_hash=True)
 class Option:
     stream: bool = True
     scalars: bool = False
     result: methodcaller | None = None
-    calls: list[methodcaller] = field(default_factory=list)
+    calls: tuple[methodcaller] = field(default_factory=tuple)
 
 
-def compile_dependency(statement: ExecutableReturnsRows, option: Option) -> Any:
-    from . import async_scoped_session
+@dataclass
+class Dependency:
+    __signature__: Signature = field(init=False)
 
-    async def __dependency(*, __session: async_scoped_session, **params: Any):
-        if option.stream:
-            result = await __session.stream(statement, params)
+    statement: ExecutableReturnsRows
+    option: Option
+
+    def __post_init__(self) -> None:
+        from . import async_scoped_session
+
+        self.__signature__ = Signature(
+            [
+                Parameter(
+                    "_session", Parameter.KEYWORD_ONLY, annotation=async_scoped_session
+                ),
+                *(
+                    Parameter(name, Parameter.KEYWORD_ONLY, default=depends)
+                    for name, depends in self.statement.compile().params.items()
+                    if isinstance(depends, DependsInner)
+                ),
+            ]
+        )
+
+    async def __call__(self, *, _session: async_scoped_session, **params: Any) -> Any:
+        if self.option.stream:
+            result = await _session.stream(self.statement, params)
         else:
-            result = await __session.execute(statement, params)
+            result = await _session.execute(self.statement, params)
 
-        for call in option.calls:
+        for call in self.option.calls:
             result = call(result)
 
-        if option.scalars:
+        if self.option.scalars:
             result = result.scalars()
 
-        if call := option.result:
+        if call := self.option.result:
             result = call(result)
 
-            if option.stream:
+            if self.option.stream:
                 result = await result
 
         return result
 
-    __dependency.__signature__ = Signature(
-        [
-            Parameter(
-                "__session", Parameter.KEYWORD_ONLY, annotation=async_scoped_session
-            ),
-            *(
-                Parameter(name, Parameter.KEYWORD_ONLY, default=depends)
-                for name, depends in statement.compile().params.items()
-                if isinstance(depends, DependsInner)
-            ),
-        ]
-    )
-
-    return Depends(__dependency)
+    def __hash__(self) -> int:
+        return hash((self.statement, self.option))
 
 
 def generic_issubclass(scls: Any, cls: Any) -> Any:

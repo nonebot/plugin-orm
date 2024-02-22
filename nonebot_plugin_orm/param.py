@@ -9,13 +9,13 @@ from inspect import Parameter, isclass
 
 from pydantic.fields import FieldInfo
 from nonebot.dependencies import Param
-from nonebot.params import DependParam
+from nonebot.params import Depends, DependParam
 from sqlalchemy import Row, Result, ScalarResult, select
 from sqlalchemy.sql.selectable import ExecutableReturnsRows
 from sqlalchemy.ext.asyncio import AsyncResult, AsyncScalarResult
 
 from .model import Model
-from .utils import Option, compile_dependency, generic_issubclass
+from .utils import Option, Dependency, generic_issubclass
 
 if sys.version_info >= (3, 10):
     from typing import Annotated, get_args, get_origin
@@ -119,12 +119,6 @@ PATTERNS = {
 @dataclass
 class SQLDependsInner:
     dependency: ExecutableReturnsRows
-
-    if sys.version_info >= (3, 10):
-        from dataclasses import KW_ONLY
-
-        _: KW_ONLY
-
     use_cache: bool = True
     validate: bool | FieldInfo = False
 
@@ -135,7 +129,7 @@ def SQLDepends(
     use_cache: bool = True,
     validate: bool | FieldInfo = False,
 ) -> Any:
-    return SQLDependsInner(dependency, use_cache=use_cache, validate=validate)
+    return SQLDependsInner(dependency, use_cache, validate)
 
 
 class ORMParam(DependParam):
@@ -164,26 +158,35 @@ class ORMParam(DependParam):
             models = (models,)
 
         if depends_inner is not None:
-            dependency = compile_dependency(depends_inner.dependency, option)
+            statement = depends_inner.dependency
         elif all(map(isclass, models)) and all(
             map(issubclass, cast(Tuple[type, ...], models), repeat(Model))
         ):
             models = cast(Tuple[Type[Model], ...], models)
-            dependency = compile_dependency(
-                select(*models).where(
-                    *(
-                        getattr(model, name) == param.default
-                        for model in models
-                        for name, param in model.__signature__.parameters.items()
-                    )
-                ),
-                option,
+            # NOTE: statement is generated (see below)
+            statement = select(*models).where(
+                *(
+                    getattr(model, name) == param.default
+                    for model in models
+                    for name, param in model.__signature__.parameters.items()
+                )
             )
         else:
             return
 
-        return super()._check_param(param.replace(default=dependency), allow_types)
+        return super()._check_param(
+            param.replace(
+                default=Depends(
+                    Dependency(statement, option),
+                    use_cache=(
+                        depends_inner.use_cache if depends_inner else False
+                    ),  # NOTE: default use_cache=False as it is impossible to reuse a generated statement (see above)
+                    validate=depends_inner.validate if depends_inner else False,
+                )
+            ),
+            allow_types,
+        )
 
     @classmethod
-    def _check_parameterless(cls, *_) -> Param | None:
+    def _check_parameterless(cls, *_) -> None:
         return
