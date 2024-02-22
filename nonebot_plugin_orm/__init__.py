@@ -142,9 +142,6 @@ def _create_engine(engine: str | URL | dict[str, Any] | AsyncEngine) -> AsyncEng
 
     options = plugin_config.sqlalchemy_engine_options.copy()
 
-    if plugin_config.sqlalchemy_echo:
-        options["echo"] = options["echo_pool"] = True
-
     if isinstance(engine, dict):
         url: str | URL = engine.pop("url")
         options.update(engine)
@@ -203,6 +200,10 @@ def _init_table():
 
 
 def _init_logger():
+    handler = LoguruHandler()
+    logging.getLogger("alembic").addHandler(handler)
+    logging.getLogger("sqlalchemy").addHandler(handler)
+
     log_level = _driver.config.log_level
     if isinstance(log_level, str):
         log_level = logger.level(log_level).no
@@ -218,11 +219,8 @@ def _init_logger():
         },
     }
 
-    handler = LoguruHandler()
     for name, level in levels.items():
-        l = logging.getLogger(name)
-        l.addHandler(handler)
-        l.setLevel(level)
+        logging.getLogger(name).setLevel(level)
 
 
 _init_logger()
