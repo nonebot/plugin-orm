@@ -120,7 +120,9 @@ def get_session(**local_kw: Any) -> sa_async.AsyncSession:
 
 # NOTE: NoneBot DI will run sync function in thread pool executor,
 # which is poor performance for this simple function, so we wrap it as a coroutine function.
-AsyncSession = Annotated[sa_async.AsyncSession, Depends(coroutine(get_session))]
+AsyncSession = Annotated[
+    sa_async.AsyncSession, Depends(coroutine(get_session), use_cache=False)
+]
 
 
 def get_scoped_session() -> sa_async.async_scoped_session[sa_async.AsyncSession]:
