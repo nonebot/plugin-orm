@@ -83,8 +83,10 @@ async def init_orm() -> None:
             try:
                 await greenlet_spawn(migrate.check, alembic_config)
             except click.UsageError:
-                logger.error("启动检查失败")
-                raise
+                if not click.confirm("目标数据库未更新到最新迁移, 是否更新?"):
+                    raise
+                cmd_opts.cmd = (migrate.upgrade, [], [])
+                await greenlet_spawn(migrate.upgrade, alembic_config)
         else:
             logger.warning("跳过启动检查, 正在同步数据库模式...")
             cmd_opts.cmd = (migrate.sync, ["revision"], [])
@@ -110,7 +112,6 @@ def _init_orm():
     run_postprocessor(_scoped_sessions.remove)
 
 
-@wraps(lambda: None)  # NOTE: for dependency injection
 def get_session(**local_kw: Any) -> sa_async.AsyncSession:
     try:
         return _session_factory(**local_kw)
@@ -121,7 +122,8 @@ def get_session(**local_kw: Any) -> sa_async.AsyncSession:
 # NOTE: NoneBot DI will run sync function in thread pool executor,
 # which is poor performance for this simple function, so we wrap it as a coroutine function.
 AsyncSession = Annotated[
-    sa_async.AsyncSession, Depends(coroutine(get_session), use_cache=False)
+    sa_async.AsyncSession,
+    Depends(coroutine(wraps(lambda: None)(get_session)), use_cache=False),
 ]
 
 
