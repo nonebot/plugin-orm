@@ -1,6 +1,6 @@
 [project]
 name = "nonebot-plugin-orm"
-version = "0.7.1"
+version = "0.7.2"
 description = "SQLAlchemy ORM support for nonebot"
 authors = [
     { name = "yanyongyu", email = "yyy@nonebot.dev" },
@@ -31,9 +31,9 @@ default = ["sqlalchemy[aiosqlite]"]
 mysql = ["sqlalchemy[aiomysql]"]
 asyncmy = ["sqlalchemy[asyncmy]"]
 aiomysql = ["sqlalchemy[aiomysql]"]
-postgresql = ["sqlalchemy[postgresql_psycopgbinary]"]
-psycopg = ["sqlalchemy[postgresql_psycopgbinary]"]
-asyncpg = ["sqlalchemy[postgresql_asyncpg]"]
+postgresql = ["sqlalchemy[postgresql-psycopgbinary]"]
+psycopg = ["sqlalchemy[postgresql-psycopgbinary]"]
+asyncpg = ["sqlalchemy[postgresql-asyncpg]"]
 sqlite = ["sqlalchemy[aiosqlite]"]
 aiosqlite = ["sqlalchemy[aiosqlite]"]
 
