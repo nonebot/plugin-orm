@@ -99,10 +99,7 @@ def _init_orm():
     _init_engines()
     _init_table()
     _session_factory = sa_async.async_sessionmaker(
-        **{
-            **dict(bind=_engines[""], binds=_binds),
-            **plugin_config.sqlalchemy_session_options,
-        }
+        _engines[""], binds=_binds, **plugin_config.sqlalchemy_session_options
     )
     _scoped_sessions = sa_async.async_scoped_session(
         _session_factory,
@@ -116,7 +113,9 @@ def get_session(**local_kw: Any) -> sa_async.AsyncSession:
     try:
         return _session_factory(**local_kw)
     except NameError:
-        raise RuntimeError("nonebot-plugin-orm 未初始化") from None
+        _init_orm()
+
+    return _session_factory(**local_kw)
 
 
 # NOTE: NoneBot DI will run sync function in thread pool executor,
@@ -131,7 +130,9 @@ def get_scoped_session() -> sa_async.async_scoped_session[sa_async.AsyncSession]
     try:
         return _scoped_sessions
     except NameError:
-        raise RuntimeError("nonebot-plugin-orm 未初始化") from None
+        _init_orm()
+
+    return _scoped_sessions
 
 
 async_scoped_session = Annotated[
@@ -180,7 +181,9 @@ def _init_engines():
             "可以通过 `pip install nonebot-plugin-orm[default]` 获得开箱即用的数据库配置."
         ) from None
 
-    _engines[""] = _create_engine(f"sqlite+aiosqlite:///{_data_dir / 'db.sqlite3'}")
+    _engines[""] = _create_engine(
+        URL.create("sqlite+aiosqlite", database=str(_data_dir / "db.sqlite3"))
+    )
 
 
 def _init_table():
