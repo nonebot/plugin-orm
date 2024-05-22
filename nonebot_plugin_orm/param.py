@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncResult, AsyncScalarResult
 from .model import Model
 from .utils import Option, Dependency, generic_issubclass
 
-if sys.version_info >= (3, 10):
+if sys.version_info >= (3, 11):
     from typing import Annotated, get_args, get_origin
     from collections.abc import Iterator, Sequence, AsyncIterator
 
