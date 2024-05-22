@@ -82,9 +82,12 @@ async def init_orm() -> None:
             cmd_opts.cmd = (migrate.check, [], [])
             try:
                 await greenlet_spawn(migrate.check, alembic_config)
-            except click.UsageError:
-                if not click.confirm("目标数据库未更新到最新迁移, 是否更新?"):
-                    raise
+            except click.UsageError as e:
+                try:
+                    click.confirm("目标数据库未更新到最新迁移, 是否更新?", abort=True)
+                except click.Abort:
+                    raise e
+
                 cmd_opts.cmd = (migrate.upgrade, [], [])
                 await greenlet_spawn(migrate.upgrade, alembic_config)
         else:
