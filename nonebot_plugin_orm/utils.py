@@ -21,7 +21,7 @@ from nonebot.plugin import Plugin
 from nonebot.params import Depends
 from nonebot import logger, get_driver
 from sqlalchemy.sql.selectable import ExecutableReturnsRows
-from nonebot.typing import origin_is_union, origin_is_literal, all_literal_values
+from nonebot.typing import origin_is_union, origin_is_literal
 
 if sys.version_info >= (3, 9):
     from importlib.resources import files
@@ -170,8 +170,8 @@ def generic_issubclass(scls: Any, cls: Any) -> Any:
     if origin_is_union(cls_origin):
         return generic_issubclass(scls, cls_args)
 
-    if origin_is_literal(scls) and origin_is_literal(cls):
-        return set(all_literal_values(scls)) <= set(all_literal_values(cls))
+    if origin_is_literal(scls_origin) and origin_is_literal(cls_origin):
+        return set(scls_args) <= set(cls_args)
 
     try:
         if not issubclass(scls_origin, cls_origin):
@@ -179,8 +179,8 @@ def generic_issubclass(scls: Any, cls: Any) -> Any:
     except TypeError:
         return False
 
-    if len(scls_args) == 1 and len(cls_args) <= 1:
-        return generic_issubclass(scls_args[0], (cls_args or (Any,))[0])
+    if not cls_args:
+        return True
 
     return len(scls_args) == len(cls_args) and all(
         map(generic_issubclass, scls_args, cls_args)
