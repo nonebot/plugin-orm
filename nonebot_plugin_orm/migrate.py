@@ -8,6 +8,7 @@ from pathlib import Path
 from pprint import pformat
 from argparse import Namespace
 from operator import attrgetter
+from itertools import filterfalse
 from typing import Any, TextIO, cast
 from tempfile import TemporaryDirectory
 from configparser import DuplicateSectionError
@@ -180,11 +181,12 @@ class AlembicConfig(Config):
             return script_path
 
         plugin_name = script_path.parent.name
-        if version_location := self._plugin_version_locations.get(plugin_name):
-            pass
-        elif version_location := self._plugin_version_locations.get(""):
-            plugin_name = ""
-        else:
+        version_location = self._plugin_version_locations.get(plugin_name)
+
+        if not version_location:
+            version_location = self._plugin_version_locations.get("")
+
+        if not version_location:
             self.print_stdout(
                 f'无法找到 {plugin_name or "<default>"} 对应的版本目录, 忽略 "{script.path}"',
                 fg="yellow",
@@ -406,7 +408,7 @@ def revision(
         config: `AlembicConfig` 对象
         message: 迁移的描述
         sql: 是否以 SQL 的形式输出迁移脚本
-        head: 迁移的基准版本, 提供了 branch_label 时默认为 'base', 否则默认为 'head'
+        head: 迁移的基准版本, 如果提供了 branch_label 默认为 `branch_label@head`, 否则为主分支的头
         splice: 是否将迁移作为一个新的分支的头; 当 `head` 不是一个分支的头时, 此项必须为 `True`
         branch_label: 迁移的分支标签
         version_path: 存放迁移脚本的目录
@@ -416,24 +418,12 @@ def revision(
     """
     from . import _plugins
 
-    if head is None:
-        head = "base" if branch_label else "head"
-
-    if not version_path and branch_label and (plugin := _plugins.get(branch_label)):
-        version_path = str(
-            config._temp_dir.joinpath(
-                *map(
-                    attrgetter("name"),
-                    reversed(list(get_parent_plugins(plugin))),
-                )
-            )
-        )
-    elif version_path:
+    if version_path:
         version_path = Path(version_path).resolve()
         version_locations = config.get_main_option("version_locations", "")
         pathsep = _SPLIT_ON_PATH[config.get_main_option("version_path_separator")]
 
-        if version_path in (
+        if version_path not in (
             Path(path).resolve() for path in version_locations.split(pathsep)
         ):
             config.set_main_option(
@@ -442,8 +432,33 @@ def revision(
             logger.warning(
                 f'临时将目录 "{version_path}" 添加到版本目录中, 请稍后将其添加到 ALEMBIC_VERSION_LOCATIONS 中'
             )
+    elif branch_label and (plugin := _plugins.get(branch_label)):
+        version_path = config._temp_dir.joinpath(
+            *map(
+                attrgetter("name"),
+                reversed(list(get_parent_plugins(plugin))),
+            )
+        )
+    else:
+        version_path = config._temp_dir
 
     script = ScriptDirectory.from_config(config)
+
+    if not head:
+        if branch_label:
+            head = f"{branch_label}@head"
+        elif len(heads := script.get_heads()) <= 1:
+            head = "head"
+        else:
+            try:
+                head = next(
+                    filterfalse(
+                        attrgetter("branch_labels"),
+                        script.get_revisions(heads),
+                    )
+                ).revision
+            except StopIteration:
+                head = "base"
 
     revision_context = RevisionContext(
         config,
@@ -455,7 +470,7 @@ def revision(
             head=head,
             splice=splice,
             branch_label=branch_label,
-            version_path=version_path,
+            version_path=str(version_path),
             rev_id=rev_id,
             depends_on=depends_on,
         ),
