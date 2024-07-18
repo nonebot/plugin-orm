@@ -258,9 +258,17 @@ class AlembicConfig(Config):
             if plugin.metadata and (
                 version_module := plugin.metadata.extra.get("orm_version_location")
             ):
-                version_location = files(version_module)
+                if sys.version_info[:2] == (3, 9):
+                    # importlib_resources.files() return a opaque Traversable object
+                    # even if the anchor is a namespace package in Python 3.9
+                    version_location = Path(version_module.__path__[0])
+                else:
+                    version_location = files(version_module)
             else:
-                version_location = files(plugin.module) / "migrations"
+                if sys.version_info[:2] == (3, 9):
+                    version_location = Path(plugin.module.__path__[0]) / "migrations"
+                else:
+                    version_location = files(plugin.module) / "migrations"
 
             temp_version_location = Path(
                 *map(attrgetter("name"), reversed(list(get_parent_plugins(plugin)))),
