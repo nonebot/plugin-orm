@@ -445,18 +445,17 @@ def revision(
     script = ScriptDirectory.from_config(config)
 
     if not head:
+        scripts = script.get_revisions(script.get_heads())
         if branch_label:
-            head = f"{branch_label}@head"
-        elif len(heads := script.get_heads()) <= 1:
+            if any(branch_label in sc.branch_labels for sc in scripts):
+                head = f"{branch_label}@head"
+            else:
+                head = "base"
+        elif len(scripts) <= 1:
             head = "head"
         else:
             try:
-                head = next(
-                    filterfalse(
-                        attrgetter("branch_labels"),
-                        script.get_revisions(heads),
-                    )
-                ).revision
+                head = next(filterfalse(attrgetter("branch_labels"), scripts)).revision
             except StopIteration:
                 head = "base"
 
