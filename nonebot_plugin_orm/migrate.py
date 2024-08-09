@@ -447,8 +447,11 @@ def revision(
                 reversed(list(get_parent_plugins(plugin))),
             )
         )
-    else:
+    elif not head:
         version_path = config._temp_dir
+
+    if isinstance(version_path, Path):
+        version_path = str(version_path)
 
     script = ScriptDirectory.from_config(config)
 
@@ -457,6 +460,7 @@ def revision(
         if branch_label:
             if any(branch_label in sc.branch_labels for sc in scripts):
                 head = f"{branch_label}@head"
+                branch_label = None
             else:
                 head = "base"
         elif len(scripts) <= 1:
@@ -477,7 +481,7 @@ def revision(
             head=head,
             splice=splice,
             branch_label=branch_label,
-            version_path=str(version_path),
+            version_path=version_path,
             rev_id=rev_id,
             depends_on=depends_on,
         ),
