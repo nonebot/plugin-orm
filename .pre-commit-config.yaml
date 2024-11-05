@@ -11,19 +11,19 @@ repos:
     hooks:
       - id: pycln
         args: [--config, pyproject.toml]
-        stages: [commit]
+        stages: [pre-commit]
 
   - repo: https://github.com/pycqa/isort
     rev: 5.13.2
     hooks:
       - id: isort
-        stages: [commit]
+        stages: [pre-commit]
 
   - repo: https://github.com/psf/black
-    rev: 24.8.0
+    rev: 24.10.0
     hooks:
       - id: black
-        stages: [commit]
+        stages: [pre-commit]
 
   - repo: https://github.com/nonebot/nonemoji
     rev: v0.1.4
