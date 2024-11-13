@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-import sys
-from itertools import repeat
-from typing import Any, cast
 from dataclasses import dataclass
 from operator import methodcaller
 from inspect import Parameter, isclass
+from collections.abc import Iterator, Sequence, AsyncIterator
+from typing_extensions import Any, Self, Annotated, cast, get_args, get_origin
 
 from pydantic.fields import FieldInfo
 from nonebot.dependencies import Param
@@ -18,16 +17,6 @@ from sqlalchemy.ext.asyncio import AsyncResult, AsyncScalarResult
 from .model import Model
 from .utils import Option, Dependency, generic_issubclass
 
-if sys.version_info >= (3, 11):
-    from typing import Annotated, get_args, get_origin
-    from collections.abc import Iterator, Sequence, AsyncIterator
-
-    Tuple = tuple
-    Type = type
-else:
-    from typing_extensions import Annotated, get_args, get_origin
-    from typing import Type, Tuple, Iterator, Sequence, AsyncIterator
-
 __all__ = (
     "SQLDepends",
     "ORMParam",
@@ -35,12 +24,12 @@ __all__ = (
 
 
 PATTERNS = {
-    AsyncIterator[Sequence[Row[Tuple[Any, ...]]]]: Option(
+    AsyncIterator[Sequence[Row[tuple[Any, ...]]]]: Option(
         True,
         False,
         (methodcaller("partitions"),),
     ),
-    AsyncIterator[Sequence[Tuple[Any, ...]]]: Option(
+    AsyncIterator[Sequence[tuple[Any, ...]]]: Option(
         True,
         False,
         (methodcaller("partitions"),),
@@ -50,12 +39,12 @@ PATTERNS = {
         True,
         (methodcaller("partitions"),),
     ),
-    Iterator[Sequence[Row[Tuple[Any, ...]]]]: Option(
+    Iterator[Sequence[Row[tuple[Any, ...]]]]: Option(
         False,
         False,
         (methodcaller("partitions"),),
     ),
-    Iterator[Sequence[Tuple[Any, ...]]]: Option(
+    Iterator[Sequence[tuple[Any, ...]]]: Option(
         False,
         False,
         (methodcaller("partitions"),),
@@ -65,7 +54,7 @@ PATTERNS = {
         True,
         (methodcaller("partitions"),),
     ),
-    AsyncResult[Tuple[Any, ...]]: Option(
+    AsyncResult[tuple[Any, ...]]: Option(
         True,
         False,
     ),
@@ -73,7 +62,7 @@ PATTERNS = {
         True,
         True,
     ),
-    Result[Tuple[Any, ...]]: Option(
+    Result[tuple[Any, ...]]: Option(
         False,
         False,
     ),
@@ -81,21 +70,21 @@ PATTERNS = {
         False,
         True,
     ),
-    AsyncIterator[Row[Tuple[Any, ...]]]: Option(
+    AsyncIterator[Row[tuple[Any, ...]]]: Option(
         True,
         False,
     ),
-    Iterator[Row[Tuple[Any, ...]]]: Option(
+    Iterator[Row[tuple[Any, ...]]]: Option(
         False,
         False,
     ),
-    Sequence[Row[Tuple[Any, ...]]]: Option(
+    Sequence[Row[tuple[Any, ...]]]: Option(
         True,
         False,
         (),
         methodcaller("all"),
     ),
-    Sequence[Tuple[Any, ...]]: Option(
+    Sequence[tuple[Any, ...]]: Option(
         True,
         False,
         (),
@@ -107,7 +96,7 @@ PATTERNS = {
         (),
         methodcaller("all"),
     ),
-    Tuple[Any, ...]: Option(
+    tuple[Any, ...]: Option(
         True,
         False,
         (),
@@ -142,7 +131,7 @@ class ORMParam(DependParam):
     @classmethod
     def _check_param(
         cls, param: Parameter, allow_types: tuple[type[Param], ...]
-    ) -> Param | None:
+    ) -> Self | None:
         type_annotation, depends_inner = param.annotation, None
         if get_origin(param.annotation) is Annotated:
             type_annotation, *extra_args = get_args(param.annotation)
@@ -205,5 +194,7 @@ class ORMParam(DependParam):
         )
 
     @classmethod
-    def _check_parameterless(cls, *_) -> None:
+    def _check_parameterless(
+        cls, value: Any, allow_types: tuple[type[Param], ...]
+    ) -> None:
         return
