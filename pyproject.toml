@@ -14,9 +14,9 @@ dependencies = [
     "nonebot-plugin-localstore~=0.6",
     "nonebot2~=2.2",
     "sqlalchemy~=2.0",
-    "typing-extensions~=4.9; python_version < \"3.11\"",
+    "typing-extensions~=4.9",
 ]
-requires-python = ">=3.8,<4.0"
+requires-python = ">=3.9,<4.0"
 readme = "README.md"
 license = { text = "MIT" }
 keywords = ["nonebot", "orm", "sqlalchemy"]
@@ -80,4 +80,4 @@ extra_standard_library = [
 path = "."
 
 [tool.pyright]
-pythonVersion = "3.8"
+pythonVersion = "3.9"

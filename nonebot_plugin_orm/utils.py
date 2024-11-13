@@ -9,12 +9,21 @@ from functools import wraps
 from itertools import repeat
 from contextlib import suppress
 from operator import methodcaller
-from typing_extensions import Annotated
+from importlib.resources import files
 from dataclasses import field, dataclass
 from inspect import Parameter, Signature, isclass
 from collections.abc import Callable, Iterable, Generator
-from typing import TYPE_CHECKING, Any, TypeVar, Coroutine
 from importlib.metadata import Distribution, PackageNotFoundError, distribution
+from typing_extensions import (
+    TYPE_CHECKING,
+    Any,
+    TypeVar,
+    Annotated,
+    Coroutine,
+    ParamSpec,
+    get_args,
+    get_origin,
+)
 
 import click
 from nonebot.plugin import Plugin
@@ -23,17 +32,10 @@ from nonebot import logger, get_driver
 from sqlalchemy.sql.selectable import ExecutableReturnsRows
 from nonebot.typing import origin_is_union, origin_is_literal
 
-if sys.version_info >= (3, 9):
-    from importlib.resources import files
-else:
-    from importlib_resources import files
-
 if sys.version_info >= (3, 10):
-    from typing import ParamSpec, get_args, get_origin
     from importlib.metadata import packages_distributions
 else:
     from importlib_metadata import packages_distributions
-    from typing_extensions import ParamSpec, get_args, get_origin
 
 
 if TYPE_CHECKING:
@@ -80,6 +82,8 @@ class StreamToLogger(StringIO):
 
         for line in buffer.rstrip().splitlines():
             logger.opt(depth=depth + 1).log(self._level, line.rstrip())
+
+        return len(buffer)
 
     def flush(self):
         pass

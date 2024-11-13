@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-import sys
 from pathlib import Path
-from typing import TypeVar
 from functools import wraps
 from argparse import Namespace
 from collections.abc import Callable, Iterable
+from typing_extensions import TypeVar, ParamSpec, Concatenate
 
 import click
 from alembic.script import Script
@@ -13,11 +12,6 @@ from alembic.script import Script
 from . import migrate
 from .config import plugin_config
 from .migrate import AlembicConfig
-
-if sys.version_info >= (3, 10):
-    from typing import ParamSpec, Concatenate
-else:
-    from typing_extensions import ParamSpec, Concatenate
 
 _P = ParamSpec("_P")
 _R = TypeVar("_R")

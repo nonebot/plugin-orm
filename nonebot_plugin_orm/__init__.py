@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-import sys
 import logging
-from typing import Any
 from argparse import Namespace
 from functools import wraps, lru_cache
+from typing_extensions import Any, Annotated
 
 import click
 from nonebot.rule import Rule
@@ -24,11 +23,6 @@ from . import migrate
 from .param import ORMParam
 from .config import Config, plugin_config
 from .utils import LoguruHandler, StreamToLogger, coroutine, get_subclasses
-
-if sys.version_info >= (3, 9):
-    from typing import Annotated
-else:
-    from typing_extensions import Annotated
 
 require("nonebot_plugin_localstore")
 from nonebot_plugin_localstore import get_data_dir
