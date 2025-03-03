@@ -75,7 +75,7 @@ def orm(ctx: click.Context, config: Path, name: str, **_) -> None:
 
 
 def update_cmd_opts(
-    f: Callable[Concatenate[AlembicConfig, _P], _R]
+    f: Callable[Concatenate[AlembicConfig, _P], _R],
 ) -> Callable[_P, _R]:
     @wraps(f)
     @click.pass_context
