@@ -9,6 +9,7 @@ from inspect import Parameter, isclass
 
 from pydantic.fields import FieldInfo
 from nonebot.dependencies import Param
+from nonebot.typing import origin_is_union
 from nonebot.params import Depends, DependParam
 from sqlalchemy import Row, Result, ScalarResult, select
 from sqlalchemy.sql.selectable import ExecutableReturnsRows
@@ -37,32 +38,32 @@ PATTERNS = {
     AsyncIterator[Sequence[Row[Tuple[Any, ...]]]]: Option(
         True,
         False,
-        methodcaller("partitions"),
+        (methodcaller("partitions"),),
     ),
     AsyncIterator[Sequence[Tuple[Any, ...]]]: Option(
         True,
         False,
-        methodcaller("partitions"),
+        (methodcaller("partitions"),),
     ),
     AsyncIterator[Sequence[Any]]: Option(
         True,
         True,
-        methodcaller("partitions"),
+        (methodcaller("partitions"),),
     ),
     Iterator[Sequence[Row[Tuple[Any, ...]]]]: Option(
         False,
         False,
-        methodcaller("partitions"),
+        (methodcaller("partitions"),),
     ),
     Iterator[Sequence[Tuple[Any, ...]]]: Option(
         False,
         False,
-        methodcaller("partitions"),
+        (methodcaller("partitions"),),
     ),
     Iterator[Sequence[Any]]: Option(
         False,
         True,
-        methodcaller("partitions"),
+        (methodcaller("partitions"),),
     ),
     AsyncResult[Tuple[Any, ...]]: Option(
         True,
@@ -91,26 +92,31 @@ PATTERNS = {
     Sequence[Row[Tuple[Any, ...]]]: Option(
         True,
         False,
+        (),
         methodcaller("all"),
     ),
     Sequence[Tuple[Any, ...]]: Option(
         True,
         False,
+        (),
         methodcaller("all"),
     ),
     Sequence[Any]: Option(
         True,
         True,
+        (),
         methodcaller("all"),
     ),
     Tuple[Any, ...]: Option(
         True,
         False,
+        (),
         methodcaller("one_or_none"),
     ),
     Any: Option(
         True,
         True,
+        (),
         methodcaller("one_or_none"),
     ),
 }
@@ -149,20 +155,31 @@ class ORMParam(DependParam):
             depends_inner = param.default
 
         for pattern, option in PATTERNS.items():
-            if models := generic_issubclass(pattern, type_annotation):
+            if models := cast(
+                "list[Any]", generic_issubclass(pattern, type_annotation)
+            ):
                 break
         else:
-            models, option = None, Option()
+            models, option = [], Option()
 
-        if not isinstance(models, tuple):
-            models = (models,)
+        for index, model in enumerate(models):
+            if origin_is_union(get_origin(model)):
+                models[index] = next(
+                    (
+                        arg
+                        for arg in get_args(model)
+                        if isclass(arg) and issubclass(arg, Model)
+                    ),
+                    None,
+                )
+
+            if not (isclass(models[index]) and issubclass(models[index], Model)):
+                models = []
+                break
 
         if depends_inner is not None:
             statement = depends_inner.dependency
-        elif all(map(isclass, models)) and all(
-            map(issubclass, cast(Tuple[type, ...], models), repeat(Model))
-        ):
-            models = cast(Tuple[Type[Model], ...], models)
+        elif models:
             # NOTE: statement is generated (see below)
             statement = select(*models).where(
                 *(
