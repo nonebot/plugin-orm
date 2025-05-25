@@ -63,7 +63,7 @@ def orm(ctx: click.Context, config: Path, name: str, **_) -> None:
                 options,
             )
 
-        ctx.obj = AlembicConfig(config, name, cmd_opts=cmd_opts)
+        ctx.obj = AlembicConfig(config, ini_section=name, cmd_opts=cmd_opts)
 
     ctx.call_on_close(ctx.obj.close)
 
