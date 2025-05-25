@@ -60,7 +60,10 @@ _plugins: dict[str, Plugin]
 _session_factory: sa_async.async_sessionmaker[sa_async.AsyncSession]
 _scoped_sessions: sa_async.async_scoped_session[sa_async.AsyncSession]
 
-_data_dir = get_data_dir(__plugin_meta__.name)
+_data_dir = get_data_dir("nonebot_plugin_orm")
+if (_deprecated_data_dir := get_data_dir(None) / "nonebot-plugin-orm").exists():
+    _deprecated_data_dir.rename(_data_dir)
+
 _driver = get_driver()
 
 
