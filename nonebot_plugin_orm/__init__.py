@@ -25,7 +25,7 @@ from .config import Config, plugin_config
 from .utils import LoguruHandler, StreamToLogger, coroutine, get_subclasses
 
 require("nonebot_plugin_localstore")
-from nonebot_plugin_localstore import get_data_dir
+from nonebot_plugin_localstore import get_data_dir, get_plugin_data_dir
 
 __all__ = (
     # __init__
@@ -60,8 +60,16 @@ _plugins: dict[str, Plugin]
 _session_factory: sa_async.async_sessionmaker[sa_async.AsyncSession]
 _scoped_sessions: sa_async.async_scoped_session[sa_async.AsyncSession]
 
-_data_dir = get_data_dir("nonebot_plugin_orm")
-if (_deprecated_data_dir := get_data_dir(None) / "nonebot-plugin-orm").exists():
+_data_dir = get_plugin_data_dir()
+if (
+    _deprecated_data_dir := get_data_dir(None) / "nonebot-plugin-orm"
+).exists() and next(_deprecated_data_dir.iterdir(), None):
+    if next(_data_dir.iterdir(), None):
+        raise RuntimeError(
+            "无法自动迁移数据目录, 请手动将 "
+            f"{_deprecated_data_dir} 中的数据移动到 {_data_dir} 中."
+        )
+    _data_dir.rmdir()
     _deprecated_data_dir.rename(_data_dir)
 
 _driver = get_driver()
