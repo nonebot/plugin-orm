@@ -1,6 +1,6 @@
 [project]
 name = "nonebot-plugin-orm"
-version = "0.8.0"
+version = "0.8.1"
 description = "SQLAlchemy ORM support for nonebot"
 authors = [
     { name = "yanyongyu", email = "yyy@nonebot.dev" },
