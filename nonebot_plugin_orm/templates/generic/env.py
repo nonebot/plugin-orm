@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from typing import cast
+from typing import Any, cast
 
 from alembic import context
 from sqlalchemy import Connection
@@ -36,34 +36,26 @@ def run_migrations_offline() -> None:
     在这里调用 context.execute() 会将给定的字符串写入到脚本输出.
     """
 
-    context.configure(
-        **{
-            **dict(
-                url=engine.url,
-                dialect_opts={"paramstyle": "named"},
-                target_metadata=target_metadata,
-                literal_binds=True,
-            ),
-            **plugin_config.alembic_context,
-        }
-    )
+    opts: dict[str, Any] = {
+        "url": engine.url,
+        "dialect_opts": {"paramstyle": "named"},
+        "target_metadata": target_metadata,
+        "literal_binds": True,
+    } | plugin_config.alembic_context
+    context.configure(**opts)
 
     with context.begin_transaction():
         context.run_migrations()
 
 
 def do_run_migrations(connection: Connection) -> None:
-    context.configure(
-        **{
-            **dict(
-                connection=connection,
-                render_as_batch=True,
-                target_metadata=target_metadata,
-                include_object=no_drop_table,
-            ),
-            **plugin_config.alembic_context,
-        }
-    )
+    opts: dict[str, Any] = {
+        "connection": connection,
+        "render_as_batch": True,
+        "target_metadata": target_metadata,
+        "include_object": no_drop_table,
+    } | plugin_config.alembic_context
+    context.configure(**opts)
 
     with context.begin_transaction():
         context.run_migrations()

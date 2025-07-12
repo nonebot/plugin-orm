@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from typing import cast
+from typing import Any, cast
 
 from alembic import context
 from sqlalchemy.util import await_only
@@ -51,37 +51,31 @@ def run_migrations_offline() -> None:
         config.print_stdout(f"迁移数据库 {name or '<default>'} 中 ...")
         file_ = f"{name}.sql"
         with open(file_, "w") as buffer:
-            context.configure(
-                **{
-                    **dict(
-                        url=engine.url,
-                        dialect_opts={"paramstyle": "named"},
-                        output_buffer=buffer,
-                        target_metadata=target_metadatas["name"],
-                        literal_binds=True,
-                    ),
-                    **plugin_config.alembic_context,
-                }
-            )
+            opts: dict[str, Any] = {
+                "url": engine.url,
+                "dialect_opts": {"paramstyle": "named"},
+                "output_buffer": buffer,
+                "target_metadata": target_metadatas[name],
+                "literal_binds": True,
+            } | plugin_config.alembic_context
+            context.configure(**opts)
+
             with context.begin_transaction():
                 context.run_migrations(name=name)
             config.print_stdout(f"将输出写入到 {file_}")
 
 
 def do_run_migrations(conn: Connection, name: str, metadata: MetaData) -> None:
-    context.configure(
-        **{
-            **dict(
-                connection=conn,
-                render_as_batch=True,
-                target_metadata=metadata,
-                include_object=no_drop_table,
-                upgrade_token=f"{name}_upgrades",
-                downgrade_token=f"{name}_downgrades",
-            ),
-            **plugin_config.alembic_context,
-        }
-    )
+    opts: dict[str, Any] = {
+        "connection": conn,
+        "render_as_batch": True,
+        "target_metadata": metadata,
+        "include_object": no_drop_table,
+        "upgrade_token": f"{name}_upgrades",
+        "downgrade_token": f"{name}_downgrades",
+    } | plugin_config.alembic_context
+    context.configure(**opts)
+
     context.run_migrations(name=name)
 
 

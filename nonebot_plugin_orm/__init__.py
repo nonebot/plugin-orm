@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import logging
 from argparse import Namespace
-from functools import wraps, lru_cache
+from functools import cache, wraps
+from collections.abc import Generator
+from contextlib import contextmanager
 from typing_extensions import Any, Annotated
 
 import click
 from nonebot.rule import Rule
+from alembic.op import get_bind
 import sqlalchemy.ext.asyncio as sa_async
 from nonebot.permission import Permission
 from sqlalchemy.util import greenlet_spawn
@@ -16,8 +19,8 @@ from nonebot.params import Depends, DefaultParam
 from nonebot.plugin import Plugin, PluginMetadata
 from sqlalchemy.log import Identified, _qual_logger_name_for_cls
 from nonebot.matcher import Matcher, current_event, current_matcher
-from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from nonebot import logger, require, get_driver, get_plugin_by_module_name
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncConnection, create_async_engine
 
 from . import migrate
 from .param import ORMParam
@@ -101,22 +104,6 @@ async def init_orm() -> None:
             await greenlet_spawn(migrate.sync, alembic_config)
 
 
-def _init_orm():
-    global _session_factory, _scoped_sessions
-
-    _init_engines()
-    _init_table()
-    _session_factory = sa_async.async_sessionmaker(
-        _engines[""], binds=_binds, **plugin_config.sqlalchemy_session_options
-    )
-    _scoped_sessions = sa_async.async_scoped_session(
-        _session_factory,
-        lambda: (id(current_event.get(None)), current_matcher.get(None)),
-    )
-
-    run_postprocessor(_scoped_sessions.remove)
-
-
 def get_session(**local_kw: Any) -> sa_async.AsyncSession:
     try:
         return _session_factory(**local_kw)
@@ -147,6 +134,26 @@ async_scoped_session = Annotated[
     sa_async.async_scoped_session[sa_async.AsyncSession],
     Depends(coroutine(get_scoped_session)),
 ]
+
+
+@contextmanager
+def _patch_migrate_session() -> Generator[None, Any, None]:
+    global _session_factory, _scoped_sessions
+
+    session_factory, scoped_sessions = _session_factory, _scoped_sessions
+
+    _session_factory = sa_async.async_sessionmaker(
+        AsyncConnection._retrieve_proxy_for_target(get_bind()),
+        **plugin_config.sqlalchemy_session_options,
+    )
+    _scoped_sessions = sa_async.async_scoped_session(
+        _session_factory,
+        lambda: (id(current_event.get(None)), current_matcher.get(None)),
+    )
+
+    yield
+
+    _session_factory, _scoped_sessions = session_factory, scoped_sessions
 
 
 def _create_engine(engine: str | URL | dict[str, Any] | AsyncEngine) -> AsyncEngine:
@@ -200,7 +207,7 @@ def _init_table():
     _binds = {}
     _plugins = {}
 
-    _get_plugin_by_module_name = lru_cache(None)(get_plugin_by_module_name)
+    _get_plugin_by_module_name = cache(get_plugin_by_module_name)
     for model in set(get_subclasses(Model)):
         table: Table | None = getattr(model, "__table__", None)
 
@@ -212,6 +219,22 @@ def _init_table():
 
         _binds[model] = _engines.get(bind_key, _engines[""])
         table.to_metadata(_metadatas.get(bind_key, _metadatas[""]))
+
+
+def _init_orm():
+    global _session_factory, _scoped_sessions
+
+    _init_engines()
+    _init_table()
+    _session_factory = sa_async.async_sessionmaker(
+        _engines[""], binds=_binds, **plugin_config.sqlalchemy_session_options
+    )
+    _scoped_sessions = sa_async.async_scoped_session(
+        _session_factory,
+        lambda: (id(current_event.get(None)), current_matcher.get(None)),
+    )
+
+    run_postprocessor(_scoped_sessions.remove)
 
 
 def _init_logger():
