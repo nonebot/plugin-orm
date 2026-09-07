@@ -115,6 +115,7 @@ async def run_migrations_online() -> None:
         await asyncio.gather(*(conn.close() for conn in conns.values()))
         await asyncio.gather(*(engine.dispose() for engine in engines.values()))
 
+
 if context.is_offline_mode():
     run_migrations_offline()
 else:
