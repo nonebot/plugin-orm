@@ -12,8 +12,8 @@ from nonebot.rule import Rule
 from alembic.op import get_bind
 import sqlalchemy.ext.asyncio as sa_async
 from nonebot.permission import Permission
-from sqlalchemy.util import greenlet_spawn
 from sqlalchemy import URL, Table, MetaData
+from sqlalchemy.util import greenlet_spawn
 from nonebot.message import run_postprocessor
 from nonebot.params import Depends, DefaultParam
 from nonebot.plugin import Plugin, PluginMetadata

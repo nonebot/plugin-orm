@@ -21,14 +21,14 @@ import sqlalchemy
 from alembic.config import Config
 from sqlalchemy.util import asbool
 from nonebot import logger, get_plugin
-from nonebot.matcher import current_matcher
 from sqlalchemy import MetaData, Connection
+from nonebot.matcher import current_matcher
 from alembic.util.editor import open_in_editor
 from alembic.script import Script, ScriptDirectory
 from alembic.util.langhelpers import rev_id as _rev_id
 from alembic.operations.ops import UpgradeOps, DowngradeOps
-from sqlalchemy.ext.asyncio import AsyncConnection, async_sessionmaker
 from alembic.migration import StampStep, RevisionStep, MigrationContext
+from sqlalchemy.ext.asyncio import AsyncConnection, async_sessionmaker
 from alembic.runtime.environment import EnvironmentContext, ProcessRevisionDirectiveFn
 from alembic.autogenerate.api import (
     RevisionContext,

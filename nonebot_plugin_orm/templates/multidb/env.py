@@ -5,8 +5,8 @@ from typing import Any, cast
 
 from alembic import context
 from sqlalchemy.util import await_only
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncConnection
 from sqlalchemy import MetaData, Connection, TwoPhaseTransaction
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncConnection
 
 from nonebot_plugin_orm.env import no_drop_table
 from nonebot_plugin_orm import AlembicConfig, plugin_config
@@ -114,6 +114,7 @@ async def run_migrations_online() -> None:
     finally:
         await asyncio.gather(*(conn.close() for conn in conns.values()))
         await asyncio.gather(*(engine.dispose() for engine in engines.values()))
+
 
 if context.is_offline_mode():
     run_migrations_offline()

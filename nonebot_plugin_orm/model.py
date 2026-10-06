@@ -63,7 +63,7 @@ def _setup_di(cls: type[Model]) -> None:
         # Check if the attribute is both a dependent and a mapped column
         depends_inner = None
         if get_origin(type_annotation) is Annotated:
-            (type_annotation, *extra_args) = get_args(type_annotation)
+            type_annotation, *extra_args = get_args(type_annotation)
             depends_inner = next(
                 (x for x in extra_args if isinstance(x, DependsInner)), None
             )
