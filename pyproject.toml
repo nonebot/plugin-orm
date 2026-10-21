@@ -1,6 +1,6 @@
 [project]
 name = "nonebot-plugin-orm"
-version = "0.8.3"
+version = "0.8.4"
 description = "SQLAlchemy ORM support for nonebot"
 authors = [
     { name = "yanyongyu", email = "yyy@nonebot.dev" },
@@ -13,7 +13,7 @@ dependencies = [
     "importlib-resources>=5.12; python_version < \"3.12\"",
     "nonebot-plugin-localstore~=0.7",
     "nonebot2~=2.4",
-    "sqlalchemy~=2.0",
+    "sqlalchemy[asyncio]~=2.0",
     "typing-extensions~=4.13",
 ]
 requires-python = ">=3.9,<4.0"
@@ -27,7 +27,6 @@ repository = "https://github.com/nonebot/plugin-orm"
 documentation = "https://github.com/nonebot/plugin-orm"
 
 [project.optional-dependencies]
-default = ["sqlalchemy[aiosqlite]"]
 mysql = ["sqlalchemy[aiomysql]"]
 asyncmy = ["sqlalchemy[asyncmy]"]
 aiomysql = ["sqlalchemy[aiomysql]"]
@@ -54,7 +53,7 @@ dev = [
     "nonemoji~=0.1",
     "pre-commit~=3.5",
     "pycln~=2.4",
-    "sqlalchemy[aiosqlite]",
+    "sqlalchemy[aiosqlite]~=2.0",
     "typing-extensions~=4.9",
 ]
 
